@@ -8,7 +8,7 @@ This feature leverage `Gtihub Release`, we need a `release Id`, either create a 
 2. After the release was created click on edit to go back into the form.
     - right-click the form and inspect it in the developer console of the browser. Find your way up to the `<form>`
     element and make note of the number at the end of the `id=` attribute.
-    ![PR_comment_01.jpg](./asset/PR_comment_02.jpg)
+    ![PR_comment_01.png](./asset/PR_comment_02.png)
 
 ## 2. Setting
 
