@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.2.0](https://github.com/Primajin/screenshots-ci-action/compare/v3.1.1...v3.2.0) (2026-08-20)
+
+
+### Features
+
+* run on the Node 24 (latest LTS) runtime ([2e5fa4a](https://github.com/Primajin/screenshots-ci-action/commit/2e5fa4a89adc35d9edabd01354b362cabebb403b))
+
+
+### Bug Fixes
+
+* resolve system Chrome for puppeteer v24 in CI ([a79a6f2](https://github.com/Primajin/screenshots-ci-action/commit/a79a6f29bcb51798fe35a4e7a979b9d2a7a0847a))
+
 ## [3.1.1](https://github.com/Primajin/screenshots-ci-action/compare/v3.1.0...v3.1.1) (2026-08-20)
 
 
