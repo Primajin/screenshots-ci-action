@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/Primajin/screenshots-ci-action/compare/v3.1.0...v3.1.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* shorten Marketplace description under the 125-char limit ([dd818e5](https://github.com/Primajin/screenshots-ci-action/commit/dd818e5ab108346cb6b9935b330faba61b9f3447))
+
 ## [3.1.0](https://github.com/Primajin/screenshots-ci-action/compare/v3.0.0...v3.1.0) (2026-08-20)
 
 
