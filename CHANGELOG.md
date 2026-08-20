@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/Primajin/screenshots-ci-action/compare/v3.0.0...v3.1.0) (2026-08-20)
+
+
+### Features
+
+* brand the action for the GitHub Marketplace ([5ee6018](https://github.com/Primajin/screenshots-ci-action/commit/5ee6018b356cd0909ea3bbd8831dc47c786e75b8))
+
 ## [3.0.0](https://github.com/Primajin/screenshots-ci-action/compare/v2.0.0...v3.0.0) (2026-08-20)
 
 
