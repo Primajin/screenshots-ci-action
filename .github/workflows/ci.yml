@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - closed
+      - edited
+
+permissions: {}
+
+jobs:
+  test:
+    if: github.event_name == 'push' || (github.base_ref == 'main' && contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_test.yml
+    secrets: inherit
+
+  lint-pr-title:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","edited","synchronize","reopened"]'), github.event.action)
+    permissions:
+      pull-requests: write
+    uses: ./.github/workflows/_lint-pr-title.yml
+    secrets: inherit
+
+  all-green:
+    name: All checks green
+    if: always()
+    needs:
+      - test
+      - lint-pr-title
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Fail if any required job failed or was cancelled
+        shell: bash
+        run: |
+          results="${{ join(needs.*.result, ' ') }}"
+          echo "Job results: $results"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "::error::A required job did not pass (result=$r)."
+              exit 1
+            fi
+          done
+          echo "All jobs succeeded or were skipped."
