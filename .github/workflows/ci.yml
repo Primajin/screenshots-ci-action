@@ -28,67 +28,41 @@ jobs:
     uses: ./.github/workflows/_lint-pr-title.yml
     secrets: inherit
 
-  prepare-release:
-    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    outputs:
-      release-id: ${{ steps.create.outputs.release-id }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Create the CI prerelease for this pull request
-        id: create
-        env:
-          TARGET_SHA: ${{ github.event.pull_request.head.sha }}
-        run: bash .github/scripts/ci-release.sh create
-
   fail-unknown-device:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_fail_unknown-device.yml
-    secrets: inherit
 
   pass-all-defaults:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_all-defaults.yml
-    secrets: inherit
 
   pass-devices:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_devices.yml
-    secrets: inherit
 
   pass-full-page:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_full-page.yml
-    secrets: inherit
 
   pass-no-commit-hash-file-name:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_no-commit-hash-file-name.yml
-    secrets: inherit
 
   pass-no-desktop:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_no-desktop.yml
-    secrets: inherit
 
   pass-release-pr-comment:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
@@ -96,35 +70,30 @@ jobs:
       contents: write
       pull-requests: write
     uses: ./.github/workflows/_pass_release-pr-comment.yml
-    secrets: inherit
 
   pass-type:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_type.yml
-    secrets: inherit
 
   pass-uses-external-url:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_uses-external-url.yml
-    secrets: inherit
 
   pass-wait-for-selector:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_wait-for-selector.yml
-    secrets: inherit
 
   pass-wait-until:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_wait-until.yml
-    secrets: inherit
 
   all-green:
     name: All checks green

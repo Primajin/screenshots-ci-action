@@ -24,7 +24,7 @@ jobs:
           waitForSelectorVisible: true
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "wait visible" --archive-to artifacts/wait-visible --match 'desktopPage*' --min-height 3000
+          node .github/scripts/assert-screenshots.mjs --title "wait visible" --archive-to artifacts/wait-visible --match 'desktopPage*' --expect-count 7 --min-height 3000
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Wait for #spinner to be hidden
@@ -36,10 +36,10 @@ jobs:
           waitForSelectorHidden: true
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "wait hidden" --archive-to artifacts/wait-hidden --match 'desktopPage*' --min-height 3000
+          node .github/scripts/assert-screenshots.mjs --title "wait hidden" --archive-to artifacts/wait-hidden --match 'desktopPage*' --expect-count 7 --min-height 3000
       - name: Reset the screenshots directory
         run: rm -rf screenshots
-      - name: Wait for #late without a timeout
+      - name: Wait for #late with timeout 0 (timeout disabled)
         uses: ./
         with:
           url: http://localhost:8080/late.html
@@ -48,7 +48,7 @@ jobs:
           waitForSelectorTimeout: 0
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "wait timeout 0" --archive-to artifacts/wait-timeout-0 --match 'desktopPage*' --min-height 3000
+          node .github/scripts/assert-screenshots.mjs --title "wait timeout 0" --archive-to artifacts/wait-timeout-0 --match 'desktopPage*' --expect-count 7 --min-height 3000
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Time out waiting (the screenshot is taken anyway)
