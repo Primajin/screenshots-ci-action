@@ -75,6 +75,39 @@ jobs:
           print('OK: mobile screenshots are viewport sized')
           PY
 
+      - name: Serve a login fixture (pre-script scenario)
+        run: |
+          rm -f _login-requests.log
+          nohup node .github/smoke-fixtures/login-server.js "$PWD/_login-requests.log" >/dev/null 2>&1 &
+          for _ in $(seq 1 20); do
+            curl -sf http://localhost:8081/login >/dev/null && break
+            sleep 0.5
+          done
+          # The readiness probe is not part of the assertion.
+          rm -f _login-requests.log
+
+      - name: Run the action with a pre-script (login, desktop + device)
+        uses: ./
+        with:
+          url: http://localhost:8081/
+          devices: iPhone 13
+          type: png
+          preScriptPath: .github/smoke-fixtures/pre.mjs
+          preScriptTimeout: 30000
+
+      - name: Assert the login cookie reached desktop and device captures
+        run: |
+          test -f _login-requests.log || { echo 'FAIL: no server log'; exit 1; }
+          cat _login-requests.log
+          # Pre-script redirect + desktop capture + device capture = 3 requests
+          # for "/", all of which must carry the session cookie.
+          authed=$(grep -c '^GET / cookie=\[.*session=1.*\]$' _login-requests.log || true)
+          anon=$(grep -c '^GET / cookie=\[\]$' _login-requests.log || true)
+          echo "authenticated GET / requests: $authed, anonymous: $anon"
+          [ "$authed" -ge 3 ] || { echo 'FAIL: expected >= 3 authenticated requests'; exit 1; }
+          [ "$anon" -eq 0 ] || { echo 'FAIL: a capture ran without the session cookie'; exit 1; }
+          ls screenshots/desktopPage*.png screenshots/iPhone_13-*.png >/dev/null
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
