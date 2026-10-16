@@ -18,10 +18,10 @@ jobs:
       uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://flameddd.github.io/screenshots-ci-action-test-waitForSelector/
-        noDesktop: true
+        no-desktop: true
         devices: iPhone 6
-        waitForSelector: '#waitForElement'
-        waitForSelectorTimeout: 5000
+        wait-for-selector: '#waitForElement'
+        wait-for-selector-timeout: 5000
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
@@ -29,6 +29,6 @@ jobs:
 ```
 
 The selector wait uses Playwright states: `attached` by default, `visible` with
-`waitForSelectorVisible: true` and `hidden` with `waitForSelectorHidden: true`
-(if both are set, `visible` wins). `waitForSelectorTimeout: 0` disables the
+`wait-for-selector-visible: true` and `hidden` with `wait-for-selector-hidden: true`
+(if both are set, `visible` wins). `wait-for-selector-timeout: 0` disables the
 timeout. On a timeout the error is logged and the screenshot is taken anyway.

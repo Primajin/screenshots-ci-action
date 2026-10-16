@@ -62,15 +62,15 @@ async function run() {
 
 		const url = core.getInput('url');
 		const devicesInput = core.getInput('devices');
-		const isNoDesktop = core.getInput('noDesktop') === 'true';
-		const isFullPage = core.getInput('fullPage') === 'true';
+		const isNoDesktop = core.getInput('no-desktop') === 'true';
+		const isFullPage = core.getInput('full-page') === 'true';
 		const isNoCommitHashFileName
-			= core.getInput('noCommitHashFileName') === 'true';
+			= core.getInput('no-commit-hash-file-name') === 'true';
 
 		const screenshotType = normalizeScreenshotType(core.getInput('type'), DEFAULT_TYPE);
 
 		// Playwright values plus legacy Puppeteer values (networkidle0/2).
-		const waitUntilInput = core.getInput('waitUntil');
+		const waitUntilInput = core.getInput('wait-until');
 		const waitUntilResult = mapWaitUntil(waitUntilInput);
 		const {value: waitUntil} = waitUntilResult;
 		const {warning, notice} = describeWaitUntil(waitUntilInput, waitUntilResult);
@@ -83,17 +83,17 @@ async function run() {
 		}
 
 		const waitForSelector
-			= core.getInput('waitForSelector') || DEFAULT_WAIT_FOR_SELECTOR;
+			= core.getInput('wait-for-selector') || DEFAULT_WAIT_FOR_SELECTOR;
 
-		// WaitForSelectorHidden / waitForSelectorVisible default false
+		// Hidden / visible selector options default to false
 		const isWaitForSelectorHidden
-			= core.getInput('waitForSelectorHidden').toLowerCase() === 'true';
+			= core.getInput('wait-for-selector-hidden').toLowerCase() === 'true';
 		const isWaitForSelectorVisible
-			= core.getInput('waitForSelectorVisible').toLowerCase() === 'true';
+			= core.getInput('wait-for-selector-visible').toLowerCase() === 'true';
 		const waitForSelectorOptions = buildSelectorWaitOptions({
 			visible: isWaitForSelectorVisible,
 			hidden: isWaitForSelectorHidden,
-			timeout: core.getInput('waitForSelectorTimeout'),
+			timeout: core.getInput('wait-for-selector-timeout'),
 		});
 
 		core.startGroup('Action config');
@@ -274,7 +274,7 @@ async function uploadAndCommnetImage(files) {
 			payload: {pull_request},
 		} = github.context;
 
-		const releaseId = core.getInput('releaseId') || '';
+		const releaseId = core.getInput('release-id') || '';
 		const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
 
 		const ISOTime = new Date().toISOString();
@@ -362,7 +362,7 @@ async function postProcesses() {
 		repo: {owner, repo},
 		payload: {pull_request},
 	} = github.context;
-	const releaseId = core.getInput('releaseId') || '';
+	const releaseId = core.getInput('release-id') || '';
 
 	if (
 		Boolean(owner)

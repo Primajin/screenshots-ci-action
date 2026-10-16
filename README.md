@@ -16,8 +16,8 @@ Telegram chat.
 > [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action)
 > (last released 2022). If you're weighing the two, here's what this fork brings:
 >
-> - 🐛 **`fullPage: false` actually works.** The original bundles an old
->   Puppeteer 14, which ignored `fullPage: false` for emulated mobile devices
+> - 🐛 **`full-page: false` actually works.** The original bundles an old
+>   Puppeteer 14, which ignored `full-page: false` for emulated mobile devices
 >   and captured the whole scrollable page anyway (a single iPad Pro shot came
 >   out ~25 000 px tall). This fork runs on **Playwright** (Chromium), so
 >   viewport screenshots behave as documented.
@@ -29,10 +29,11 @@ Telegram chat.
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
 >   major with `Primajin/screenshots-ci-action@v4`.
 >
-> The inputs and outputs are the same as the original's, so switching is mostly
-> a matter of replacing `flameddd/screenshots-ci-action@master` with
-> `Primajin/screenshots-ci-action@v4`. Since v4 uses Playwright, a few device
-> names and `waitUntil` values behave differently; see
+> The outputs are the same as the original's and the inputs only differ in
+> their kebab-case names, so switching is mostly a matter of replacing
+> `flameddd/screenshots-ci-action@master` with `Primajin/screenshots-ci-action@v4`
+> and renaming the inputs. Since v4 uses Playwright, a few device names and
+> `wait-until` values behave differently; see
 > [Migrating from v3](#migrating-from-v3).
 
 ## Parameters
@@ -40,18 +41,18 @@ Telegram chat.
 | ------------- | ------------- | ------------- |
 | `url`(string) | **required**(`""`) | The target website's URL to generate screenshots |
 | `devices`(string) | optional(`""`) | Specific mobile devices to generate screenshots. **Use comma(`,`) to separate devices name.** Device name list in below. |
-| `noDesktop`(boolean) | optional(`false`) | Set `true` if not require to get desktop viewpoint screenshots. |
-| `fullPage`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
-| `noCommitHashFileName`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
+| `no-desktop`(boolean) | optional(`false`) | Set `true` if not require to get desktop viewpoint screenshots. |
+| `full-page`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
+| `no-commit-hash-file-name`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
 | `type`(string) | optional(`jpeg`) | Specify screenshot type, can be either `jpeg` or `png`. |
-| `waitUntil`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
-| `waitForSelector`(string) | optional(`''`) | Wait for the **selector** to be attached to the DOM (Playwright state `attached`). If the **selector** doesn't appear after the `waitForSelectorTimeout` of waiting, it will take screenshots immediately. <br> See [README.waitForSelector](/README.waitForSelector.md) for example |
-| `waitForSelectorTimeout`(number) | optional(`30000`) | **WaitForSelector Options:** <br> Maximum time to wait in milliseconds. Pass `0` to disable timeout. <br> - `30000` means 30 seconds |
-| `waitForSelectorVisible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible (Playwright state `visible`), i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
-| `waitForSelectorHidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden (Playwright state `hidden`), i.e. have `display: none` or `visibility: hidden` CSS properties. |
-| `preScriptPath`(string) | optional(`''`) | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. <br> See [README.pre-script](/README.pre-script.md) for examples |
-| `preScriptTimeout`(number) | optional(`30000`) | Maximum time in milliseconds the pre-script may run before the action fails. Defaults to `30000`. |
-| `releaseId`(string) | optional(`""`) | GitHub Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
+| `wait-until`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
+| `wait-for-selector`(string) | optional(`''`) | Wait for the **selector** to be attached to the DOM (Playwright state `attached`). If the **selector** doesn't appear after the `wait-for-selector-timeout` of waiting, it will take screenshots immediately. <br> See [README.waitForSelector](/README.waitForSelector.md) for example |
+| `wait-for-selector-timeout`(number) | optional(`30000`) | **WaitForSelector Options:** <br> Maximum time to wait in milliseconds. Pass `0` to disable timeout. <br> - `30000` means 30 seconds |
+| `wait-for-selector-visible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible (Playwright state `visible`), i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
+| `wait-for-selector-hidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden (Playwright state `hidden`), i.e. have `display: none` or `visibility: hidden` CSS properties. |
+| `pre-script-path`(string) | optional(`''`) | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. <br> See [README.pre-script](/README.pre-script.md) for examples |
+| `pre-script-timeout`(number) | optional(`30000`) | Maximum time in milliseconds the pre-script may run before the action fails. Defaults to `30000`. |
+| `release-id`(string) | optional(`""`) | GitHub Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
 
 ## Envs
 | Name(type) | required(default) | Description |
@@ -122,7 +123,7 @@ jobs:
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape
-        noDesktop: true
+        no-desktop: true
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
@@ -160,7 +161,7 @@ jobs:
       with:
         url: https://m.facebook.com/
         devices: iPhone 6,iPhone 6 landscape
-        noDesktop: true
+        no-desktop: true
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
@@ -221,7 +222,7 @@ exist in both lists (for example `iPhone 13`, `Pixel 5`, `Galaxy S III`) keep
 working, but their emulated viewport/user agent may differ slightly between
 Puppeteer's and Playwright's data.
 
-Other behaviour changes: `waitUntil: networkidle0` and `networkidle2` both map
+Other behaviour changes: `wait-until: networkidle0` and `networkidle2` both map
 to Playwright's `networkidle` (see the parameter table), and each device is
 rendered in its own browser context.
 
@@ -333,25 +334,46 @@ rendered in its own browser context.
 
 ## Migrating from v3
 
-v4 replaces Puppeteer with Playwright. Inputs and outputs are the same, but
-three things can break an existing workflow:
+v4 replaces Puppeteer with Playwright. Outputs are the same, but four things
+can break an existing workflow:
 
-1. **Device names** now come from Playwright's list. `iPad`, `iPad Pro`,
+1. **Input names are now kebab-case**, matching the GitHub Actions convention.
+   The old camelCase names are **not** accepted any more; GitHub only prints an
+   `Unexpected input(s)` warning for them and the values are silently ignored,
+   so rename them in your workflow. `url`, `devices` and `type` are unchanged.
+
+   | v3 input | v4 input |
+   | --- | --- |
+   | `noDesktop` | `no-desktop` |
+   | `fullPage` | `full-page` |
+   | `noCommitHashFileName` | `no-commit-hash-file-name` |
+   | `waitUntil` | `wait-until` |
+   | `waitForSelector` | `wait-for-selector` |
+   | `waitForSelectorHidden` | `wait-for-selector-hidden` |
+   | `waitForSelectorVisible` | `wait-for-selector-visible` |
+   | `waitForSelectorTimeout` | `wait-for-selector-timeout` |
+   | `releaseId` | `release-id` |
+   | `preScriptPath` | `pre-script-path` |
+   | `preScriptTimeout` | `pre-script-timeout` |
+
+   (`preScriptPath` and `preScriptTimeout` were added after v3; they only
+   exist in the kebab-case form in any released version.)
+2. **Device names** now come from Playwright's list. `iPad`, `iPad Pro`,
    `iPhone 4`, `iPhone 5` and `JioPhone 2` no longer exist (see the
    [replacement table](#migrating-from-the-puppeteer-based-versions-v3-and-earlier)),
    and an unknown name now **fails the run** with "did you mean" suggestions
    instead of being skipped.
-2. **`waitUntil`**: `networkidle0` and `networkidle2` are still accepted but
+3. **`wait-until`**: `networkidle0` and `networkidle2` are still accepted but
    both map to Playwright's single `networkidle`. The default is now
    `networkidle`. `commit` is new.
-3. **Composite action**: the action installs its own dependencies and Chromium
+4. **Composite action**: the action installs its own dependencies and Chromium
    (`npx playwright install --with-deps chromium`) instead of running a bundled
    `dist/` on the Node runtime. You no longer need a Chrome/puppeteer install
    step (e.g. `mujo-code/puppeteer-headful`) in your workflow, and
    `PUPPETEER_EXECUTABLE_PATH` / `CHROME_BIN` are no longer honoured.
 
-Also new: `waitForSelectorTimeout: 0` now really disables the timeout (it used
-to fall back to 30 seconds), and `releaseId` is a declared input.
+Also new: `wait-for-selector-timeout: 0` now really disables the timeout (it used
+to fall back to 30 seconds), and `release-id` is a declared input.
 
 ## Development
 

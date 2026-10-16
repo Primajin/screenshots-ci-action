@@ -23,9 +23,9 @@ const DEVICES_DOCS_URL
 	= 'https://github.com/microsoft/playwright/blob/main/packages/playwright-core/src/server/deviceDescriptorsSource.json';
 
 /**
- Resolve the `waitUntil` input to a Playwright value.
+ Resolve the `wait-until` input to a Playwright value.
  Unknown / empty values fall back to the default.
- @param {string} [input] Raw waitUntil input.
+ @param {string} [input] Raw wait-until input.
  @returns {{ value: string, fallback: boolean, mappedFrom?: string }} The Playwright value and how it was derived.
  */
 function mapWaitUntil(input) {
@@ -223,9 +223,9 @@ function normalizeScreenshotType(input, fallback) {
  */
 function describeWaitUntil(input, result) {
 	const {value, fallback, mappedFrom} = result;
-	const legacy = `waitUntil "${mappedFrom}" is a legacy Puppeteer value, using Playwright's "${value}".`;
+	const legacy = `wait-until "${mappedFrom}" is a legacy Puppeteer value, using Playwright's "${value}".`;
 	return {
-		warning: fallback ? `Unknown waitUntil "${input}", using "${value}".` : undefined,
+		warning: fallback ? `Unknown wait-until "${input}", using "${value}".` : undefined,
 		notice: mappedFrom ? legacy : undefined,
 	};
 }

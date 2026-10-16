@@ -46,7 +46,7 @@ jobs:
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape
-        noDesktop: true
+        no-desktop: true
       env:
         TELE_CHAT_ID: ${{ secrets.TELE_CHAT_ID }}
         TELE_BOT_TOKEN: ${{ secrets.TELE_BOT_TOKEN }}

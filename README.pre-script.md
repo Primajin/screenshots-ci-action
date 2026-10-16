@@ -5,7 +5,7 @@ screenshots are taken. The pre-script runs once; the resulting session
 (cookies and `localStorage`) is then reused for the desktop screenshots and for
 every device, so a login persists across all viewports.
 
-`preScriptPath` points to a JavaScript module (relative to
+`pre-script-path` points to a JavaScript module (relative to
 `GITHUB_WORKSPACE`, so run `actions/checkout` first) whose **default export** is
 an async function. It receives:
 
@@ -18,7 +18,7 @@ an async function. It receives:
 | `startCapture` | No-op kept for compatibility with `webapp-console-log-action`. Capture always starts after the pre-script returns. |
 
 If the pre-script cannot be loaded (missing file, syntax error, no default
-function), throws, or runs longer than `preScriptTimeout`
+function), throws, or runs longer than `pre-script-timeout`
 (default `30000` ms), the action fails with a clear message. Anything you pass
 via `env:` (for example secrets) is not logged by the action; avoid printing it
 in your script.
@@ -66,8 +66,8 @@ jobs:
       with:
         url: https://example.com/dashboard
         devices: iPhone 13
-        preScriptPath: .github/scripts/login.mjs
-        preScriptTimeout: 60000
+        pre-script-path: .github/scripts/login.mjs
+        pre-script-timeout: 60000
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots

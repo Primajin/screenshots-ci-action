@@ -199,12 +199,12 @@ describe('normalizeScreenshotType', () => {
 describe('describeWaitUntil', () => {
 	it('warns on fallbacks', () => {
 		expect(describeWaitUntil('bogus', {value: 'networkidle', fallback: true}))
-			.toEqual({warning: 'Unknown waitUntil "bogus", using "networkidle".', notice: undefined});
+			.toEqual({warning: 'Unknown wait-until "bogus", using "networkidle".', notice: undefined});
 	});
 
 	it('notes legacy values', () => {
 		expect(describeWaitUntil('networkidle0', mapWaitUntil('networkidle0')).notice)
-			.toBe('waitUntil "networkidle0" is a legacy Puppeteer value, using Playwright\'s "networkidle".');
+			.toBe('wait-until "networkidle0" is a legacy Puppeteer value, using Playwright\'s "networkidle".');
 	});
 
 	it('is silent for Playwright values', () => {
