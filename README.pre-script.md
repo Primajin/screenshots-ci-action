@@ -17,10 +17,16 @@ an async function. It receives:
 | `url` | The `url` input |
 | `startCapture` | No-op kept for compatibility with `webapp-console-log-action`. Capture always starts after the pre-script returns. |
 
-If the pre-script throws, or runs longer than `preScriptTimeout`
+If the pre-script cannot be loaded (missing file, syntax error, no default
+function), throws, or runs longer than `preScriptTimeout`
 (default `30000` ms), the action fails with a clear message. Anything you pass
 via `env:` (for example secrets) is not logged by the action; avoid printing it
 in your script.
+
+Only cookies and `localStorage` are carried over to the screenshots (Playwright
+`storageState`). `sessionStorage` and IndexedDB are not. Do not `import` or
+`require` `playwright` in your script; use the `browser`, `context` and `page`
+objects you are given, since the action runs its own Playwright version.
 
 Use `.mjs` (or `"type": "module"`) for the script file.
 

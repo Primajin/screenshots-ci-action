@@ -44,12 +44,14 @@ const runPreScript = async ({
     return false;
   }
 
-  const preScript = await loadPreScript(preScriptPath);
   const timeout = getPreScriptTimeout();
   let isCaptureStarted = false;
   let timeoutId = null;
 
   try {
+    // Loading is inside the try so missing files and syntax errors get the
+    // same "Failed to execute pre-script" prefix as runtime failures.
+    const preScript = await loadPreScript(preScriptPath);
     await Promise.race([
       preScript({
         browser,
