@@ -66,7 +66,7 @@ There are **3** different way to output files
 
 More full example in below
 
-# Example 1
+## Example 1
 About this example:
 - screenshot desktop and few specific devices
 - Upload screenshots to **Actions Artifacts**
@@ -101,7 +101,7 @@ jobs:
         name: Download-screenshots
 ```
 
-# Example 2(screenshot iphone 6, without desktop)
+## Example 2(screenshot iphone 6, without desktop)
 
 ```yaml
 name: screenshots ci actions
@@ -127,7 +127,7 @@ jobs:
         name: Download-screenshots
 ```
 
-# Example 3 (multi URLs)
+## Example 3 (multi URLs)
 - URL 1: https://www.facebook.com/ (desktop)
 - URL 2: https://m.facebook.com/   (mobile (iPhone 6))
 
@@ -165,18 +165,18 @@ jobs:
         name: Download-mobile-screenshots # Put URL2 screenshots into Download-desktop-screenshots
 ```
 
-# More examples (**Vercel**, **Netlify**)
+## More examples (**Vercel**, **Netlify**)
 - [**Vercel** Preview Deployment screenhots](/README.Vercel.md)
 - [**Netlify** Preview Deployment screenhots](/README.Netlify.md)
 - [Integration with **Telegram**](/README.Telegram.md)
 - [Post screenshots into **PR comment**](/README.PR.md)
 - [Manually dispatch workflow](/README.workflow-dispatch.md)
 
-# Download screenshots (more result example in below)
+## Download screenshots (more result example in below)
 ![img](./asset/download_screenshots_01.jpg)
 ![img](./asset/download_screenshots_02.jpg)
 
-# Telegram
+## Telegram
 ![img](./asset/telegram4.jpg)
 
 ## Desktop: auto-create all of these ratio

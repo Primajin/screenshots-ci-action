@@ -7,22 +7,24 @@ import process from 'node:process';
 
 const logFile = process.argv[2] || 'requests.log';
 http
-  .createServer((req, res) => {
-    const cookie = req.headers.cookie || '';
-    fs.appendFileSync(logFile, `${req.method} ${req.url} cookie=[${cookie}]\n`);
-    res.setHeader('content-type', 'text/html');
-    if (req.url === '/login' && req.method === 'POST') {
-      req.resume();
-      res.writeHead(302, { 'set-cookie': 'session=1; Path=/', location: '/' });
-      return res.end();
-    }
-    if (req.url === '/login') {
-      return res.end(
-        '<form method=post action=/login><input name=user><button>Go</button></form>'
-      );
-    }
-    res.end(
-      cookie.includes('session=1') ? '<h1>LOGGED IN</h1>' : '<h1>LOGGED OUT</h1>'
-    );
-  })
-  .listen(8081);
+	.createServer((request, response) => {
+		const cookie = request.headers.cookie || '';
+		fs.appendFileSync(logFile, `${request.method} ${request.url} cookie=[${cookie}]\n`);
+		response.setHeader('content-type', 'text/html');
+		if (request.url === '/login' && request.method === 'POST') {
+			request.resume();
+			response.writeHead(302, {'set-cookie': 'session=1; Path=/', location: '/'});
+			return response.end();
+		}
+
+		if (request.url === '/login') {
+			return response.end(
+				'<form method=post action=/login><input name=user><button>Go</button></form>',
+			);
+		}
+
+		response.end(
+			cookie.includes('session=1') ? '<h1>LOGGED IN</h1>' : '<h1>LOGGED OUT</h1>',
+		);
+	})
+	.listen(8081);

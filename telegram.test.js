@@ -2,7 +2,12 @@ import {mkdtemp, writeFile} from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
-	afterEach, beforeEach, describe, expect, test, vi,
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	test,
+	vi,
 } from 'vitest';
 import telegram from './telegram.js';
 
@@ -24,7 +29,7 @@ const makeFiles = async names => {
 };
 
 beforeEach(() => {
-	vi.stubGlobal('fetch', vi.fn(async () => okResponse({message_id: 1})));
+	vi.stubGlobal('fetch', vi.fn(async () => okResponse({messageId: 1})));
 	vi.spyOn(console, 'log').mockImplementation(() => {});
 	vi.spyOn(console, 'error').mockImplementation(() => {});
 });

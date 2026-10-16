@@ -2,7 +2,7 @@
 
 Thanks for **Github** and **Vercel(Zeit)** hard work and great **collaboration**. We can hook **Vercel's preview deployment** via [deployment_status](https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads#deployment_status) event   
 
-# Config Examples
+## Config Examples
 - screenshot desktop for every **Vercel Preview Deployment**
 
 ```yaml

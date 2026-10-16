@@ -48,7 +48,7 @@ async function sendMediaGroup({chatId, token, directory, fileNames}) {
 	return callApi(token, 'sendMediaGroup', form);
 }
 
-async function telegram({teleChatId, teltBotToken, files, path}) {
+export default async function telegram({teleChatId, teltBotToken, files, path}) {
 	try {
 		const common = {chatId: teleChatId, token: teltBotToken, directory: path};
 		let result = [];
@@ -74,5 +74,3 @@ async function telegram({teleChatId, teltBotToken, files, path}) {
 		console.error(error);
 	}
 }
-
-export default telegram;

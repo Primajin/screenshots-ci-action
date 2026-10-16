@@ -3,16 +3,13 @@
   "version": "3.2.0",
   "description": "Github Actions to screenshots website",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Primajin/screenshots-ci-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Primajin/screenshots-ci-action/issues"
-  },
+  "repository": "github:Primajin/screenshots-ci-action",
   "homepage": "https://github.com/Primajin/screenshots-ci-action#readme",
+  "bugs": "https://github.com/Primajin/screenshots-ci-action/issues",
   "author": "Primajin",
   "type": "module",
+  "exports": "./index.js",
+  "sideEffects": true,
   "engines": {
     "node": ">=24"
   },
@@ -22,10 +19,18 @@
     "test": "vitest run",
     "coverage": "vitest run --coverage"
   },
+  "files": [
+    "index.js",
+    "action.yml",
+    "pre-script.js",
+    "telegram.js",
+    "utils.js"
+  ],
   "keywords": [
-    "GitHub",
-    "Actions",
-    "screenshot"
+    "github-action",
+    "screenshot",
+    "playwright",
+    "ci"
   ],
   "dependencies": {
     "@actions/core": "^3.0.1",
@@ -37,6 +42,5 @@
     "@vitest/coverage-v8": "^5.0.5",
     "vitest": "^5.0.5",
     "xo": "^5.0.1"
-  },
-  "exports": "./index.js"
+  }
 }
