@@ -24,8 +24,8 @@ jobs:
           type: png
       - name: Assert full page images are taller than the viewport
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "full-page true (desktop)" --archive-to artifacts/full-page-true --match 'desktopPage*' --min-height 2000 --type png
-          node .github/scripts/assert-screenshots.mjs --title "full-page true (device)" --archive-to artifacts/full-page-true --match 'iPhone_13-*' --min-height 5000 --type png
+          node .github/scripts/assert-screenshots.mjs --title "full-page true (desktop)" --archive-to artifacts/full-page-true --match 'desktopPage*' --expect-count 7 --min-height 2000 --type png
+          node .github/scripts/assert-screenshots.mjs --title "full-page true (device)" --archive-to artifacts/full-page-true --match 'iPhone_13-*' --expect-count 1 --min-height 5000 --type png
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Take viewport screenshots
@@ -37,8 +37,8 @@ jobs:
           type: png
       - name: Assert viewport sized images
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "full-page false (desktop)" --archive-to artifacts/full-page-false --match 'desktopPage*' --expect-from-name 'desktopPage*' --max-height 1080
-          node .github/scripts/assert-screenshots.mjs --title "full-page false (device)" --archive-to artifacts/full-page-false --expect 'iPhone_13-*=1170x1992' --match 'iPhone_13-*'
+          node .github/scripts/assert-screenshots.mjs --title "full-page false (desktop)" --archive-to artifacts/full-page-false --match 'desktopPage*' --expect-from-name 'desktopPage*' --expect-count 7 --max-height 1080
+          node .github/scripts/assert-screenshots.mjs --title "full-page false (device)" --archive-to artifacts/full-page-false --expect 'iPhone_13-*=1170x1992' --match 'iPhone_13-*' --expect-count 1
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7

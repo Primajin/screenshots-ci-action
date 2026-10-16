@@ -1,4 +1,4 @@
-// Tiny login fixture for the pre-script smoke test.
+// Tiny login fixture for the pre-script scenarios.
 // GET /login -> form; POST /login -> Set-Cookie session=1; GET / -> LOGGED IN
 // only with the cookie. Every request's Cookie header is appended to argv[2].
 import http from 'node:http';

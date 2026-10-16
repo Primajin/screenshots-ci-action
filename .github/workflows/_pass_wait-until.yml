@@ -34,7 +34,7 @@ jobs:
           INPUT_WAIT-UNTIL: networkidle0
         run: |
           node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
-          grep -q 'legacy Puppeteer value' action.log
+          grep -qF 'wait-until "networkidle0" is a legacy Puppeteer value' action.log
       - name: Assert the legacy value still produced a screenshot
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait-until networkidle0 (legacy)" --archive-to artifacts/networkidle0 --expect-count 1 --expect 'iPhone_13-*=1170x1992'
@@ -49,7 +49,7 @@ jobs:
           INPUT_WAIT-UNTIL: bogus
         run: |
           node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
-          grep -q 'Unknown' action.log
+          grep -qF 'Unknown wait-until "bogus", using "networkidle".' action.log
       - name: Assert the fallback still produced a screenshot
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait-until bogus (fallback)" --archive-to artifacts/fallback --expect-count 1

@@ -6,6 +6,10 @@ named `_pass_<scenario>.yml` (must succeed) or `_fail_<scenario>.yml` (must
 fail), and is wired into `ci.yml` as job `pass-<scenario>` / `fail-<scenario>`.
 The `All checks green` job aggregates them.
 
+The scenarios run on every pull request, including stacked ones (PRs that do
+not target `main`). The `test` job (unit tests and lint) is gated to PRs that
+target `main` and to pushes, so on a stacked PR it is skipped.
+
 | Scenario | What it asserts |
 | --- | --- |
 | `pass-all-defaults` | 7 desktop sizes, jpeg, commit hash in the name, each image has the size from its file name |
@@ -15,7 +19,7 @@ The `All checks green` job aggregates them.
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
-| `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (page grows to 3000px); a timeout still takes the screenshot |
+| `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
 | `pass-release-pr-comment` | upload to the CI pre-release and the PR comment with images (see below) |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
@@ -53,8 +57,16 @@ it). Its numeric id (415059795) is the single `CI_RELEASE_ID` line at the top of
 Assets are named `<ISO timestamp>-<file name>`, so scenarios and re-runs never
 collide; they accumulate over time. The scenario only counts assets and
 comments created after it started, and checks that an image URL is publicly
-downloadable. It is skipped for forks and Dependabot (read-only token) and when
+downloadable (ranged GET, `image/*` or `application/octet-stream`). The comment must also carry the run's short commit sha, so it belongs to this run. It is skipped for forks and Dependabot (read-only token) and when
 a PR is closed.
+
+### Pruning
+
+A release holds at most 1000 assets and each run adds about 9. The last step of
+the scenario therefore deletes assets of release `415059795` (and only that
+release) older than 30 days, judged by the asset `created_at`. It does nothing
+while the release has fewer than 600 assets, so normally it is a no-op. Nothing
+else in the repository is deleted by CI.
 
 Recreate the release if it is ever deleted:
 
