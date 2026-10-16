@@ -45,14 +45,14 @@ Telegram chat.
 | `waitForSelectorTimeout`(number) | optional(`30000`) | **WaitForSelector Options:** <br> Maximum time to wait in milliseconds. Pass `0` to disable timeout. <br> - `30000` means 30 seconds |
 | `waitForSelectorVisible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible (Playwright state `visible`), i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
 | `waitForSelectorHidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden (Playwright state `hidden`), i.e. have `display: none` or `visibility: hidden` CSS properties. |
-| `releaseId`(string) | optional(`"`) | Github Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
+| `releaseId`(string) | optional(`""`) | GitHub Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
 
 ## Envs
 | Name(type) | required(default) | Description |
 | ------------- | ------------- | ------------- |
 | `TELE_CHAT_ID`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
 | `TELE_BOT_TOKEN`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
-| `GITHUB_TOKEN`(string) | optional(`""`) | Github Actions Tokens, it's required to upload screenshots to PR comment. See [README.PR](/README.PR.md) for more detail |
+| `GITHUB_TOKEN`(string) | optional(`""`) | GitHub Actions token, it's required to upload screenshots to PR comment. See [README.PR](/README.PR.md) for more detail |
 
 ## Output screenshots
 There are **3** different way to output files
@@ -85,13 +85,13 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape,Nexus 7,iPad Pro 11,Galaxy S III landscape,iPad Pro 11 landscape
-    - uses: actions/upload-artifact@v4 # Uplaod screenshots to Actions Artifacts via actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7 # Uplaod screenshots to Actions Artifacts via actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
@@ -110,14 +110,14 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape
         noDesktop: true
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
@@ -138,12 +138,12 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: screenshots-desktop-facebook
       uses: Primajin/screenshots-ci-action@v3
       with:
         url: https://www.facebook.com/
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-desktop-screenshots # Put URL1 screenshots into Download-desktop-screenshots
@@ -155,7 +155,7 @@ jobs:
         url: https://m.facebook.com/
         devices: iPhone 6,iPhone 6 landscape
         noDesktop: true
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-mobile-screenshots # Put URL2 screenshots into Download-desktop-screenshots
@@ -325,29 +325,51 @@ rendered in its own browser context.
 
 </details>
 
+## Migrating from v3
+
+v4 replaces Puppeteer with Playwright. Inputs and outputs are the same, but
+three things can break an existing workflow:
+
+1. **Device names** now come from Playwright's list. `iPad`, `iPad Pro`,
+   `iPhone 4`, `iPhone 5` and `JioPhone 2` no longer exist (see the
+   [replacement table](#migrating-from-the-puppeteer-based-versions-v3-and-earlier)),
+   and an unknown name now **fails the run** with "did you mean" suggestions
+   instead of being skipped.
+2. **`waitUntil`**: `networkidle0` and `networkidle2` are still accepted but
+   both map to Playwright's single `networkidle`. The default is now
+   `networkidle`. `commit` is new.
+3. **Composite action**: the action installs its own dependencies and Chromium
+   (`npx playwright install --with-deps chromium`) instead of running a bundled
+   `dist/` on the Node runtime. You no longer need a Chrome/puppeteer install
+   step (e.g. `mujo-code/puppeteer-headful`) in your workflow, and
+   `PUPPETEER_EXECUTABLE_PATH` / `CHROME_BIN` are no longer honoured.
+
+Also new: `waitForSelectorTimeout: 0` now really disables the timeout (it used
+to fall back to 30 seconds), and `releaseId` is a declared input.
+
 ## Result examples
 ### desktop (600x450)
-![img](./asset/desktopPage600x450-6febe96.png)
+![img](./asset/desktopPage600x450-9890851.png)
 
 ### desktop (960x720)
-![img](./asset/desktopPage960x720-6febe96.png)
+![img](./asset/desktopPage960x720-9890851.png)
 
 ### desktop (1140x640)
-![img](./asset/desktopPage1140x640-6febe96.png)
+![img](./asset/desktopPage1140x640-9890851.png)
 
 ### desktop (1920x1080)
-![img](./asset/desktopPage1920x1080-6febe96.png)
+![img](./asset/desktopPage1920x1080-9890851.png)
 
 ### mobile (iPhone_6_landscape)
-![img](./asset/iPhone_6_landscape-6febe96.png)
+![img](./asset/iPhone_6_landscape-9890851.png)
 
 ### mobile (iPhone_6)
-![img](./asset/iPhone_6-6febe96.png)
+![img](./asset/iPhone_6-9890851.png)
 
 ### mobile (Nexus_7)
-![img](./asset/Nexus_7-6febe96.png)
+![img](./asset/Nexus_7-9890851.png)
 
 ### mobile (iPhone_6, fullPage)
 <p align="center">
-  <img width="auto" height="450" src="asset/iPhone_6-bf5fcab-fullPage.jpeg"
+  <img width="auto" height="450" src="asset/iPhone_6-9890851-fullPage.jpeg"
 </p>

@@ -14,12 +14,12 @@ jobs:
     if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: screenshots-ci-action
         uses: Primajin/screenshots-ci-action@v3
         with:
           url: ${{ github.event.deployment_status.target_url }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           path: screenshots
           name: Download-screenshots

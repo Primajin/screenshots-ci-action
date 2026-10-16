@@ -1,10 +1,10 @@
 # screenshots-ci-actions upload and post image to PR comment
 
 ## 1. Prerequisites 
-This feature leverage `Gtihub Release`, we need a `release Id`, either create a new release or use existed release
+This feature leverage `GitHub Release`, we need a `release Id`, either create a new release or use existed release
 1. Create a repo release
     - release tag name are **NOT** important, you can name and add it whatever you want.
-2. `curl` gtihub release endpoint to find out `release id`
+2. `curl` GitHub release endpoint to find out `release id`
     - `/repos/{owner}/{repo}/releases/tags/{tag}`
     - ref: https://docs.github.com/en/rest/reference/releases#get-a-release  
     - (let me know if you have easier way to figure out release id, I will update document, thanks)
@@ -67,7 +67,7 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
@@ -76,7 +76,7 @@ jobs:
         releaseId: 63601424
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots

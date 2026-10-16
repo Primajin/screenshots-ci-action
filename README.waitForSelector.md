@@ -13,7 +13,7 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
@@ -22,7 +22,7 @@ jobs:
         devices: iPhone 6
         waitForSelector: '#waitForElement'
         waitForSelectorTimeout: 5000
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
