@@ -40,7 +40,7 @@ action's own upload path (`uploadReleaseAsset` + PR comment) is exercised for
 real. Every call posts one PR comment, which is why the other scenarios do not
 use it. The release is one long-lived **pre-release** (never marked latest, tag
 `ci-screenshots`, no `v` prefix, so release-please and the major tag job ignore
-it). Its numeric id is the single `CI_RELEASE_ID` line at the top of
+it). Its numeric id (415059795) is the single `CI_RELEASE_ID` line at the top of
 `_pass_release-pr-comment.yml`.
 
 Assets are named `<ISO timestamp>-<file name>`, so scenarios and re-runs never
