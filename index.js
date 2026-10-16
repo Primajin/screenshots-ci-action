@@ -4,6 +4,7 @@ const github = require('@actions/github');
 const { chromium, devices } = require('playwright');
 const fs = require('fs').promises;
 const telegram = require('./telegram.js');
+const { runPreScript } = require('./pre-script.js');
 const {
   buildSelectorWaitOptions,
   formatInvalidDevicesError,
@@ -143,6 +144,32 @@ async function run() {
       await io.mkdirP(`${process.env.GITHUB_WORKSPACE}/screenshots/`);
     }
 
+    // 3b. Optional pre-script (login, cookie banner, ...). It runs once on a
+    // base context; the resulting cookies/localStorage are copied into every
+    // desktop and device context below. Capture always starts after the
+    // pre-script returned, so startCapture() is a documented no-op.
+    let storageState;
+    if (process.env.PRE_SCRIPT_PATH) {
+      core.startGroup('Pre-script');
+      const baseContext = await browser.newContext();
+      try {
+        const basePage = await baseContext.newPage();
+        await runPreScript({
+          browser,
+          context: baseContext,
+          page: basePage,
+          url,
+        });
+        storageState = await baseContext.storageState();
+      } finally {
+        await baseContext.close().catch(() => {});
+      }
+      console.log(
+        'Pre-script finished, session state is reused for all screenshots.'
+      );
+      core.endGroup(); // Pre-script
+    }
+
     // 4. Take desktop screenshots
 
     if (!noDesktop) {
@@ -151,6 +178,7 @@ async function run() {
 
       const desktopContext = await browser.newContext({
         viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0],
+        storageState,
       });
       const desktopPage = await desktopContext.newPage();
 
@@ -194,7 +222,10 @@ async function run() {
 
         // Every device gets its own context built from Playwright's descriptor
         // (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
-        const context = await browser.newContext({ ...devices[deviceName] });
+        const context = await browser.newContext({
+          ...devices[deviceName],
+          storageState,
+        });
         const page = await context.newPage();
 
         await page.goto(url, { waitUntil });
