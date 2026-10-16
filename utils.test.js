@@ -5,6 +5,8 @@ import {
 	findCloseDevices,
 	formatInvalidDevicesError,
 	mapWaitUntil,
+	describeWaitUntil,
+	normalizeScreenshotType,
 	resolveDevices,
 } from './utils.js';
 
@@ -178,5 +180,34 @@ describe('buildContextOptions', () => {
 
 	it('works without a descriptor', () => {
 		expect(buildContextOptions(undefined, undefined)).toEqual({});
+	});
+});
+
+describe('normalizeScreenshotType', () => {
+	it('lowercases supported types', () => {
+		expect(normalizeScreenshotType('PNG', 'jpeg')).toBe('png');
+		expect(normalizeScreenshotType('jpeg', 'png')).toBe('jpeg');
+	});
+
+	it('falls back for empty or unsupported values', () => {
+		expect(normalizeScreenshotType('', 'jpeg')).toBe('jpeg');
+		expect(normalizeScreenshotType(undefined, 'jpeg')).toBe('jpeg');
+		expect(normalizeScreenshotType('gif', 'jpeg')).toBe('jpeg');
+	});
+});
+
+describe('describeWaitUntil', () => {
+	it('warns on fallbacks', () => {
+		expect(describeWaitUntil('bogus', {value: 'networkidle', fallback: true}))
+			.toEqual({warning: 'Unknown waitUntil "bogus", using "networkidle".', notice: undefined});
+	});
+
+	it('notes legacy values', () => {
+		expect(describeWaitUntil('networkidle0', mapWaitUntil('networkidle0')).notice)
+			.toBe('waitUntil "networkidle0" is a legacy Puppeteer value, using Playwright\'s "networkidle".');
+	});
+
+	it('is silent for Playwright values', () => {
+		expect(describeWaitUntil('load', mapWaitUntil('load'))).toEqual({warning: undefined, notice: undefined});
 	});
 });

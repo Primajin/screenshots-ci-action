@@ -204,7 +204,35 @@ function buildContextOptions(descriptor = {}, storageState) {
 	return options;
 }
 
+/**
+ Normalize the screenshot type input.
+ @param {string} [input] Raw type input.
+ @param {string} fallback Type used when the input is empty or unsupported.
+ @returns {string} 'png' or 'jpeg' (or the fallback).
+ */
+function normalizeScreenshotType(input, fallback) {
+	const type = String(input || fallback).toLowerCase();
+	return ['png', 'jpeg'].includes(type) ? type : fallback;
+}
+
+/**
+ Build the log messages for a mapped waitUntil input.
+ @param {string} input Raw waitUntil input.
+ @param {{ value: string, fallback: boolean, mappedFrom?: string }} result Result of mapWaitUntil.
+ @returns {{ warning?: string, notice?: string }} Messages to log, if any.
+ */
+function describeWaitUntil(input, result) {
+	const {value, fallback, mappedFrom} = result;
+	const legacy = `waitUntil "${mappedFrom}" is a legacy Puppeteer value, using Playwright's "${value}".`;
+	return {
+		warning: fallback ? `Unknown waitUntil "${input}", using "${value}".` : undefined,
+		notice: mappedFrom ? legacy : undefined,
+	};
+}
+
 export {
+	describeWaitUntil,
+	normalizeScreenshotType,
 	DEFAULT_WAITUNTIL_OPTION,
 	DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT,
 	DEVICES_DOCS_URL,

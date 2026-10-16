@@ -11,8 +11,10 @@ import {runPreScript} from './pre-script.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
+	describeWaitUntil,
 	formatInvalidDevicesError,
 	mapWaitUntil,
+	normalizeScreenshotType,
 	resolveDevices,
 } from './utils.js';
 
@@ -58,36 +60,26 @@ async function run() {
 	try {
 		// 1. Get User config
 
-		const url = core.getInput('url') || '';
-		const devicesInput = core.getInput('devices') || '';
+		const url = core.getInput('url');
+		const devicesInput = core.getInput('devices');
 		const isNoDesktop = core.getInput('noDesktop') === 'true';
 		const isFullPage = core.getInput('fullPage') === 'true';
 		const isNoCommitHashFileName
 			= core.getInput('noCommitHashFileName') === 'true';
 
-		let screenshotType = core.getInput('type') || DEFAULT_TYPE;
-		screenshotType = screenshotType.toLowerCase();
-		if (!['png', 'jpeg'].includes(screenshotType)) {
-			screenshotType = DEFAULT_TYPE;
-		}
+		const screenshotType = normalizeScreenshotType(core.getInput('type'), DEFAULT_TYPE);
 
 		// Playwright values plus legacy Puppeteer values (networkidle0/2).
 		const waitUntilInput = core.getInput('waitUntil');
-		const {
-			value: waitUntil,
-			fallback: waitUntilFallback,
-			mappedFrom: waitUntilMappedFrom,
-		} = mapWaitUntil(waitUntilInput);
-		if (waitUntilFallback) {
-			console.warn(
-				`Unknown waitUntil "${waitUntilInput}", using "${waitUntil}".`,
-			);
+		const waitUntilResult = mapWaitUntil(waitUntilInput);
+		const {value: waitUntil} = waitUntilResult;
+		const {warning, notice} = describeWaitUntil(waitUntilInput, waitUntilResult);
+		if (warning) {
+			console.warn(warning);
 		}
 
-		if (waitUntilMappedFrom) {
-			console.log(
-				`waitUntil "${waitUntilMappedFrom}" is a legacy Puppeteer value, using Playwright's "${waitUntil}".`,
-			);
+		if (notice) {
+			console.log(notice);
 		}
 
 		const waitForSelector
