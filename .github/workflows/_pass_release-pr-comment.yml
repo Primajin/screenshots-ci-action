@@ -10,7 +10,7 @@ permissions:
 env:
   # Id of the long-lived CI pre-release that collects the screenshots of this
   # scenario (see README.ci.md for how to recreate it).
-  CI_RELEASE_ID: 'PLACEHOLDER'
+  CI_RELEASE_ID: '415059795'
 
 jobs:
   pass:
