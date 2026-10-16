@@ -49,14 +49,18 @@ jobs:
             echo "$assets" | grep -q -- "$(basename "$file")$" || { echo "::error::No release asset for $file"; exit 1; }
           done
           tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
-          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")))] | .[0].body // empty")
+          sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
+          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")))] | .[0].body // empty")
           [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
           images=$(echo "$comment" | grep -c '<img src=' || true)
           echo "PR comment embeds $images image(s)"
           [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
           url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
-          curl -sfIL -o /dev/null "$url" || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
-          echo "Image URLs resolve: $url"
+          ctype=$(curl -sfL -o /dev/null -r 0-0 -w '%{content_type}' "$url") || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
+          case "$ctype" in
+            image/*|application/octet-stream) echo "Image URL resolves ($ctype): $url" ;;
+            *) echo "::error::Unexpected content type $ctype for $url"; exit 1 ;;
+          esac
           {
             echo "### PR comment and release"
             echo ""
@@ -71,3 +75,21 @@ jobs:
           path: screenshots
           retention-days: 7
           if-no-files-found: warn
+      - name: Prune assets older than 30 days once the release nears its asset limit
+        if: always()
+        run: |
+          set -euo pipefail
+          # Housekeeping for the shared CI release only (id is the constant above).
+          assets=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$CI_RELEASE_ID/assets" --jq '.[] | [.id, .created_at] | @tsv')
+          total=$(echo "$assets" | grep -c . || true)
+          if [ "$total" -lt 600 ]; then
+            echo "Release has $total assets, nothing to prune"
+            exit 0
+          fi
+          cutoff=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          echo "Release has $total assets, pruning those created before $cutoff"
+          echo "$assets" | while IFS=$'\t' read -r id created; do
+            if [[ "$created" < "$cutoff" ]]; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id"
+            fi
+          done
