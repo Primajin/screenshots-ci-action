@@ -1,0 +1,73 @@
+name: "Positive Test - release upload and PR comment"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # Id of the long-lived CI pre-release that collects the screenshots of this
+  # scenario (see README.ci.md for how to recreate it).
+  CI_RELEASE_ID: 'PLACEHOLDER'
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - screenshots are uploaded to the release and posted to the PR"
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Remember when this scenario started
+        run: echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take screenshots and upload them to the release
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13,iPad Pro 11 landscape
+          releaseId: ${{ env.CI_RELEASE_ID }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the local screenshots
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "Release upload" --expect-count 9 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
+      - name: Assert the release assets and the PR comment
+        run: |
+          set -euo pipefail
+          files=$(ls screenshots | wc -l)
+          assets=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.created_at >= \"$SINCE\") | .name")
+          echo "$assets"
+          [ "$(echo "$assets" | grep -c .)" -ge "$files" ] || { echo "::error::Expected at least $files new release assets"; exit 1; }
+          for file in screenshots/*; do
+            echo "$assets" | grep -q -- "$(basename "$file")$" || { echo "::error::No release asset for $file"; exit 1; }
+          done
+          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")))] | .[0].body // empty")
+          [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
+          images=$(echo "$comment" | grep -c '<img src=' || true)
+          echo "PR comment embeds $images image(s)"
+          [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
+          url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
+          curl -sfIL -o /dev/null "$url" || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
+          echo "Image URLs resolve: $url"
+          {
+            echo "### PR comment and release"
+            echo ""
+            echo "- Release \`$tag\` (id $CI_RELEASE_ID) received at least $files new assets"
+            echo "- The PR comment embeds $images images"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-release-pr-comment
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn

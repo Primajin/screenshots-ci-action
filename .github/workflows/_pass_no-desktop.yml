@@ -1,0 +1,35 @@
+name: "Positive Test - no desktop"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - only the device screenshot is taken and it is viewport sized"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take a device screenshot only
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          noDesktop: true
+          devices: iPhone 13
+          type: png
+      - name: Assert no desktop files and a viewport sized (not full page) device image
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "No desktop" --expect-count 1 --expect-absent 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --type png
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-no-desktop
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn
