@@ -14,7 +14,7 @@ inputs:
     default: false
   devices:
     required: false
-    description: "Screenshot specific mobile devices viewpoint. e.x.: 'iPhone 6' 'Galaxy S III landscape' 'iPad Pro landscape'"
+    description: "Screenshot specific mobile devices viewpoint. e.x.: 'iPhone 13' 'Galaxy S III landscape' 'iPad Pro 11 landscape'. Any name from Playwright's device list."
   fullPage:
     required: false
     description: "When true, takes a screenshot of the full scrollable page. Defaults to false"
@@ -29,11 +29,11 @@ inputs:
     default: false
   waitUntil:
     required: false
-    description: "When to consider navigation succeeded, defaults to 'networkidle0'."
-    default: 'networkidle0'
+    description: "When to consider navigation succeeded: load, domcontentloaded, networkidle or commit. Legacy Puppeteer values networkidle0 and networkidle2 are mapped to networkidle. Defaults to 'networkidle'."
+    default: 'networkidle'
   waitForSelector:
     required: false
-    description: "Wait for the selector to appear in page. If at the moment of calling the method the selector already exists, the method will return immediately. If the selector doesn't appear after the timeout milliseconds of waiting, the function will throw."
+    description: "Wait for the selector to be attached to the DOM. Returns immediately if it already exists. If it doesn't appear within the timeout, the error is logged and the screenshot is taken anyway."
     default: ''
   waitForSelectorHidden:
     required: false
@@ -44,6 +44,52 @@ inputs:
   waitForSelectorTimeout:
     required: false
     description: 'Maximum time to wait in milliseconds. Pass 0 to disable timeout.'
+  releaseId:
+    required: false
+    description: "GitHub Release id. Required to upload the screenshots to a PR comment (see README.PR.md)."
+    default: ''
 runs:
-  using: 'node24'
-  main: "dist/index.js"
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Compute lockfile hash
+      id: lockfile
+      run: echo "hash=$(sha256sum "${GITHUB_ACTION_PATH}/package-lock.json" | cut -c1-16)" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Cache action dependencies
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.action_path }}/node_modules
+        key: screenshots-ci-deps-${{ runner.os }}-${{ steps.lockfile.outputs.hash }}
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      working-directory: ${{ github.action_path }}
+
+    - name: Install Chromium
+      run: npx playwright install --with-deps chromium
+      shell: bash
+      working-directory: ${{ github.action_path }}
+
+    - name: Take screenshots
+      run: node "${GITHUB_ACTION_PATH}/index.js"
+      shell: bash
+      env:
+        INPUT_URL: ${{ inputs.url }}
+        INPUT_NODESKTOP: ${{ inputs.noDesktop }}
+        INPUT_DEVICES: ${{ inputs.devices }}
+        INPUT_FULLPAGE: ${{ inputs.fullPage }}
+        INPUT_TYPE: ${{ inputs.type }}
+        INPUT_NOCOMMITHASHFILENAME: ${{ inputs.noCommitHashFileName }}
+        INPUT_WAITUNTIL: ${{ inputs.waitUntil }}
+        INPUT_WAITFORSELECTOR: ${{ inputs.waitForSelector }}
+        INPUT_WAITFORSELECTORHIDDEN: ${{ inputs.waitForSelectorHidden }}
+        INPUT_WAITFORSELECTORVISIBLE: ${{ inputs.waitForSelectorVisible }}
+        INPUT_WAITFORSELECTORTIMEOUT: ${{ inputs.waitForSelectorTimeout }}
+        INPUT_RELEASEID: ${{ inputs.releaseId }}

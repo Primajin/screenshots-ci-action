@@ -4,8 +4,8 @@
   "description": "Github Actions to screenshots website",
   "main": "index.js",
   "scripts": {
-    "lint": "node ./node_modules/eslint/bin/eslint.js index.js --fix",
-    "build": "ncc build index.js -o dist -m"
+    "lint": "eslint index.js telegram.js utils.js --fix",
+    "test": "vitest run"
   },
   "keywords": [
     "GitHub",
@@ -27,14 +27,14 @@
     "@actions/github": "^5.0.3",
     "@actions/io": "^1.1.2",
     "node-telegram-bot-api": "^0.57.0",
-    "puppeteer": "^24.10.2"
+    "playwright": "^1.64.1"
   },
   "devDependencies": {
-    "@vercel/ncc": "^0.38.4",
     "eslint": "^8.16.0",
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-prettier": "^4.0.0",
     "husky": "^8.0.1",
-    "prettier": "^2.6.2"
+    "prettier": "^2.6.2",
+    "vitest": "^5.0.5"
   }
 }
