@@ -83,6 +83,18 @@ describe('resolveDevices', () => {
     expect(resolveDevices('iphone 13', DEVICES).valid).toEqual(['iPhone 13']);
   });
 
+  it('dedupes repeated devices, including case variants', () => {
+    expect(
+      resolveDevices('iPhone 13,iPhone 13, iphone 13', DEVICES).valid
+    ).toEqual(['iPhone 13']);
+  });
+
+  it('treats an ambiguous case-insensitive match as unknown', () => {
+    const result = resolveDevices('PIXEL 5', ['Pixel 5', 'pixel 5']);
+    expect(result.valid).toEqual([]);
+    expect(result.invalid.map(({ name }) => name)).toEqual(['PIXEL 5']);
+  });
+
   it('reports unknown names with suggestions', () => {
     const result = resolveDevices('iPad Pro,iPhone 13', DEVICES);
     expect(result.valid).toEqual(['iPhone 13']);
@@ -130,7 +142,7 @@ describe('buildSelectorWaitOptions', () => {
   });
 
   it('falls back to the default for empty/invalid/negative timeouts', () => {
-    for (const timeout of ['', undefined, 'abc', '-5']) {
+    for (const timeout of ['', '   ', undefined, null, 'abc', '-5']) {
       expect(buildSelectorWaitOptions({ timeout }).timeout).toBe(30000);
     }
   });

@@ -128,7 +128,7 @@ function resolveDevices(input, deviceNames) {
     }
     invalid.push({ name, suggestions: findCloseDevices(name, deviceNames) });
   }
-  return { valid, invalid };
+  return { valid: [...new Set(valid)], invalid };
 }
 
 /**
