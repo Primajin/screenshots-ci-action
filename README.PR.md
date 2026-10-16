@@ -41,7 +41,7 @@ Set `releaseId` parameters and `GITHUB_TOKEN` env
 
 ```yaml
 - name: screenshots-ci-actions upload and post image to PR comment
-  uses: Primajin/screenshots-ci-action@v3
+  uses: Primajin/screenshots-ci-action@v4
   with:
     url: https://www.google.com/
     releaseId: 63601424
@@ -69,7 +69,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://www.google.com/
         devices: iPhone 6,iPhone 6 landscape

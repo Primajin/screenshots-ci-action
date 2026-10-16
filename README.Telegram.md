@@ -42,7 +42,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape

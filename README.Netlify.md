@@ -65,7 +65,7 @@ jobs:
         site_name: netlify_SITE_NAME
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ steps.waitFor200.outputs.url }}
     - uses: actions/upload-artifact@v7

@@ -6,7 +6,7 @@ artifacts, post them straight into a pull-request comment, or send them to a
 Telegram chat.
 
 [![Release](https://img.shields.io/github/v/release/Primajin/screenshots-ci-action?sort=semver&label=release)](https://github.com/Primajin/screenshots-ci-action/releases)
-[![Runtime](https://img.shields.io/badge/runtime-node24-brightgreen?logo=node.js&logoColor=white)](action.yml)
+[![Action type](https://img.shields.io/badge/action-composite-brightgreen?logo=githubactions&logoColor=white)](action.yml)
 [![Playwright](https://img.shields.io/badge/playwright-chromium-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -25,11 +25,13 @@ Telegram chat.
 > - 📱 **Up-to-date device list** via Playwright's built-in device descriptors.
 > - 🚀 **Actively released** with
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
->   major with `Primajin/screenshots-ci-action@v3`.
+>   major with `Primajin/screenshots-ci-action@v4`.
 >
-> Same inputs and outputs as the original, so it's a drop-in replacement:
-> just swap `flameddd/screenshots-ci-action@master` for
-> `Primajin/screenshots-ci-action@v3`.
+> The inputs and outputs are the same as the original's, so switching is mostly
+> a matter of replacing `flameddd/screenshots-ci-action@master` with
+> `Primajin/screenshots-ci-action@v4`. Since v4 uses Playwright, a few device
+> names and `waitUntil` values behave differently; see
+> [Migrating from v3](#migrating-from-v3).
 
 ## Parameters
 | Name(type) | required(default) | Description |
@@ -87,7 +89,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape,Nexus 7,iPad Pro 11,Galaxy S III landscape,iPad Pro 11 landscape
@@ -112,7 +114,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape
@@ -140,7 +142,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-desktop-facebook
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://www.facebook.com/
     - uses: actions/upload-artifact@v7
@@ -150,7 +152,7 @@ jobs:
     - run: rm ./screenshots/* # Remove URL1 files
 
     - name: screenshots-mobile-facebook
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://m.facebook.com/
         devices: iPhone 6,iPhone 6 landscape

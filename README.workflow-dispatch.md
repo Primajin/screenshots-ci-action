@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url }}
     - uses: actions/upload-artifact@v7
@@ -55,7 +55,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url }}
         devices: ${{ github.event.inputs.devices }}
@@ -87,7 +87,7 @@ jobs:
     steps:
     - uses: actions/checkout@v7
     - name: screenshots-url1-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url1 }}
     - uses: actions/upload-artifact@v7
@@ -97,7 +97,7 @@ jobs:
     - run: rm ./screenshots/*
 
     - name: screenshots-url2-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url2 }}
         devices: iPhone 6,iPhone 6 landscape
