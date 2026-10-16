@@ -89,6 +89,54 @@ describe('telegram', () => {
 		expect(names).toHaveLength(12);
 	});
 
+	test('never sends a one-item media group (11 and 21 files)', async () => {
+		vi.useFakeTimers();
+		for (const count of [11, 21]) {
+			fetch.mockClear();
+			const names = Array.from({length: count}, (_, index) => `f${index}.png`);
+			// eslint-disable-next-line no-await-in-loop
+			const directory = await makeFiles(names);
+			const promise = telegram({
+				teleChatId: '42', teltBotToken: 'TOKEN', files: names, path: directory,
+			});
+			// eslint-disable-next-line no-await-in-loop
+			await vi.runAllTimersAsync();
+			// eslint-disable-next-line no-await-in-loop
+			await promise;
+
+			const sizes = fetch.mock.calls.map(([, options]) => JSON.parse(options.body.get('media')).length);
+			expect(sizes.every(size => size >= 2 && size <= 10)).toBe(true);
+			expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(count);
+		}
+	});
+
+	test('does not sleep after the final chunk', async () => {
+		vi.useFakeTimers();
+		const names = Array.from({length: 12}, (_, index) => `f${index}.png`);
+		const directory = await makeFiles(names);
+		const promise = telegram({
+			teleChatId: '42', teltBotToken: 'TOKEN', files: names, path: directory,
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		await vi.advanceTimersByTimeAsync(1999);
+		expect(fetch).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(1);
+		await promise;
+		expect(fetch).toHaveBeenCalledTimes(2);
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	test('sets the MIME type from the file extension', async () => {
+		const directory = await makeFiles(['a.png', 'b.jpg', 'c.JPEG']);
+		await telegram({
+			teleChatId: '42', teltBotToken: 'TOKEN', files: ['a.png', 'b.jpg', 'c.JPEG'], path: directory,
+		});
+		const {body} = fetch.mock.calls[0][1];
+		expect(body.get('file0').type).toBe('image/png');
+		expect(body.get('file1').type).toBe('image/jpeg');
+		expect(body.get('file2').type).toBe('image/jpeg');
+	});
+
 	test('logs API failures without the token and does not throw', async () => {
 		fetch.mockResolvedValueOnce({
 			ok: false,
