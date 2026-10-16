@@ -224,7 +224,8 @@ async function run() {
     core.setFailed(error.message);
 
     if (browser && browser.close) {
-      await browser.close();
+      // Cleanup must never mask the original error or skip the exit code.
+      await browser.close().catch(() => {});
     }
 
     process.exit(1);
