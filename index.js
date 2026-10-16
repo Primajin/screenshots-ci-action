@@ -6,6 +6,7 @@ const fs = require('fs').promises;
 const telegram = require('./telegram.js');
 const { runPreScript } = require('./pre-script.js');
 const {
+  buildContextOptions,
   buildSelectorWaitOptions,
   formatInvalidDevicesError,
   mapWaitUntil,
@@ -163,11 +164,11 @@ async function run() {
         storageState = await baseContext.storageState();
       } finally {
         await baseContext.close().catch(() => {});
+        core.endGroup(); // Pre-script
       }
       console.log(
         'Pre-script finished, session state is reused for all screenshots.'
       );
-      core.endGroup(); // Pre-script
     }
 
     // 4. Take desktop screenshots
@@ -176,10 +177,12 @@ async function run() {
       core.startGroup('start process desktop');
       console.log('Processing desktop screenshot');
 
-      const desktopContext = await browser.newContext({
-        viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0],
-        storageState,
-      });
+      const desktopContext = await browser.newContext(
+        buildContextOptions(
+          { viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0] },
+          storageState
+        )
+      );
       const desktopPage = await desktopContext.newPage();
 
       await desktopPage.goto(url, { waitUntil });
@@ -222,10 +225,9 @@ async function run() {
 
         // Every device gets its own context built from Playwright's descriptor
         // (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
-        const context = await browser.newContext({
-          ...devices[deviceName],
-          storageState,
-        });
+        const context = await browser.newContext(
+          buildContextOptions(devices[deviceName], storageState)
+        );
         const page = await context.newPage();
 
         await page.goto(url, { waitUntil });

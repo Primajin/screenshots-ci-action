@@ -179,11 +179,29 @@ function buildSelectorWaitOptions({ visible, hidden, timeout } = {}) {
   return { state, timeout: parsed };
 }
 
+/**
+ * Build Playwright browser.newContext options: the (optional) device
+ * descriptor / viewport options plus the storageState produced by the
+ * pre-script. storageState is omitted when undefined so Playwright starts a
+ * clean context, and it never overrides descriptor fields.
+ * @param {object} [descriptor]
+ * @param {object} [storageState]
+ * @returns {object}
+ */
+function buildContextOptions(descriptor = {}, storageState) {
+  const options = { ...descriptor };
+  if (storageState !== undefined) {
+    options.storageState = storageState;
+  }
+  return options;
+}
+
 module.exports = {
   DEFAULT_WAITUNTIL_OPTION,
   DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT,
   DEVICES_DOCS_URL,
   PLAYWRIGHT_WAITUNTIL_OPTIONS,
+  buildContextOptions,
   buildSelectorWaitOptions,
   findCloseDevices,
   formatInvalidDevicesError,
