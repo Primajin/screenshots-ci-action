@@ -174,6 +174,24 @@ export function checkScreenshots(directory, options = {}) {
     errors.push(`Directory "${directory}" does not exist`);
   }
 
+  // Per-file options on an empty selection would pass vacuously.
+  const perFileOptions = [
+    options.match && options.match !== '*' ? 'match' : undefined,
+    options.minHeight === undefined ? undefined : 'min-height',
+    options.maxHeight === undefined ? undefined : 'max-height',
+    options.type ? 'type' : undefined,
+    options.noHash ? 'no-hash' : undefined,
+    options.withHash ? 'with-hash' : undefined,
+    options.expectFromName ? 'expect-from-name' : undefined,
+  ].filter(Boolean);
+  if (exists && names.length === 0 && perFileOptions.length > 0) {
+    errors.push(
+      `No file matches "${matchGlob}" but per-file assertions were requested (${perFileOptions.join(
+        ', '
+      )})`
+    );
+  }
+
   for (const name of names) {
     const buffer = fs.readFileSync(path.join(directory, name));
     try {
