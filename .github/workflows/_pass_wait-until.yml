@@ -19,40 +19,40 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/
-          waitUntil: domcontentloaded
+          wait-until: domcontentloaded
       - name: Assert 7 desktop screenshots
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "waitUntil domcontentloaded" --archive-to artifacts/domcontentloaded --expect-count 7 --expect-from-name 'desktopPage*'
+          node .github/scripts/assert-screenshots.mjs --title "wait-until domcontentloaded" --archive-to artifacts/domcontentloaded --expect-count 7 --expect-from-name 'desktopPage*'
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Run with legacy networkidle0 and capture the log
         shell: bash
         env:
           INPUT_URL: http://localhost:8080/
-          INPUT_NODESKTOP: true
+          INPUT_NO-DESKTOP: true
           INPUT_DEVICES: iPhone 13
-          INPUT_WAITUNTIL: networkidle0
+          INPUT_WAIT-UNTIL: networkidle0
         run: |
           node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
           grep -q 'legacy Puppeteer value' action.log
       - name: Assert the legacy value still produced a screenshot
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "waitUntil networkidle0 (legacy)" --archive-to artifacts/networkidle0 --expect-count 1 --expect 'iPhone_13-*=1170x1992'
+          node .github/scripts/assert-screenshots.mjs --title "wait-until networkidle0 (legacy)" --archive-to artifacts/networkidle0 --expect-count 1 --expect 'iPhone_13-*=1170x1992'
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Run with an unknown value and capture the log
         shell: bash
         env:
           INPUT_URL: http://localhost:8080/
-          INPUT_NODESKTOP: true
+          INPUT_NO-DESKTOP: true
           INPUT_DEVICES: iPhone 13
-          INPUT_WAITUNTIL: bogus
+          INPUT_WAIT-UNTIL: bogus
         run: |
           node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
           grep -q 'Unknown' action.log
       - name: Assert the fallback still produced a screenshot
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "waitUntil bogus (fallback)" --archive-to artifacts/fallback --expect-count 1
+          node .github/scripts/assert-screenshots.mjs --title "wait-until bogus (fallback)" --archive-to artifacts/fallback --expect-count 1
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7

@@ -32,7 +32,7 @@ jobs:
         with:
           url: http://localhost:8080/
           devices: iPhone 13,iPad Pro 11 landscape
-          releaseId: ${{ env.CI_RELEASE_ID }}
+          release-id: ${{ env.CI_RELEASE_ID }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Assert the local screenshots

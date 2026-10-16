@@ -20,10 +20,10 @@ jobs:
         with:
           url: http://localhost:8080/
           devices: iPhone 13
-          noCommitHashFileName: true
+          no-commit-hash-file-name: true
       - name: Assert plain file names
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "noCommitHashFileName true" --archive-to artifacts/without-hash --expect-count 8 --no-hash --expect 'iPhone_13.jpeg=1170x1992'
+          node .github/scripts/assert-screenshots.mjs --title "no-commit-hash-file-name true" --archive-to artifacts/without-hash --expect-count 8 --no-hash --expect 'iPhone_13.jpeg=1170x1992'
       - name: Reset the screenshots directory
         run: rm -rf screenshots
       - name: Take screenshots with the commit hash (control)
@@ -31,10 +31,10 @@ jobs:
         with:
           url: http://localhost:8080/
           devices: iPhone 13
-          noCommitHashFileName: false
+          no-commit-hash-file-name: false
       - name: Assert hash suffixed file names
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "noCommitHashFileName false" --archive-to artifacts/with-hash --expect-count 8 --with-hash
+          node .github/scripts/assert-screenshots.mjs --title "no-commit-hash-file-name false" --archive-to artifacts/with-hash --expect-count 8 --with-hash
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7

@@ -21,7 +21,7 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/
-          preScriptPath: .github/smoke-fixtures/does-not-exist.mjs
+          pre-script-path: .github/smoke-fixtures/does-not-exist.mjs
       - name: Check the step failed
         if: always()
         run: |

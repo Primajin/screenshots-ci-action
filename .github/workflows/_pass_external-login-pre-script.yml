@@ -18,8 +18,8 @@ jobs:
         with:
           url: https://primajin.github.io/webapp-console-log-action/login-demo/login/
           devices: iPhone 13
-          preScriptPath: .github/smoke-fixtures/external-login.mjs
-          preScriptTimeout: 30000
+          pre-script-path: .github/smoke-fixtures/external-login.mjs
+          pre-script-timeout: 30000
       - name: Assert desktop and device screenshots exist
         run: |
           node .github/scripts/assert-screenshots.mjs --title "External login pre-script" --expect-count 8 --expect-from-name 'desktopPage*'
