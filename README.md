@@ -7,6 +7,8 @@ Telegram chat.
 
 [![Release](https://img.shields.io/github/v/release/Primajin/screenshots-ci-action?sort=semver&label=release)](https://github.com/Primajin/screenshots-ci-action/releases)
 [![Action type](https://img.shields.io/badge/action-composite-brightgreen?logo=githubactions&logoColor=white)](action.yml)
+[![CI](https://github.com/Primajin/screenshots-ci-action/actions/workflows/ci.yml/badge.svg)](https://github.com/Primajin/screenshots-ci-action/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=nodedotjs&logoColor=white)](package.json)
 [![Playwright](https://img.shields.io/badge/playwright-chromium-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -350,6 +352,18 @@ three things can break an existing workflow:
 
 Also new: `waitForSelectorTimeout: 0` now really disables the timeout (it used
 to fall back to 30 seconds), and `releaseId` is a declared input.
+
+## Development
+
+The action is plain ES modules on Node 24 or newer, linted with [xo](https://github.com/xojs/xo)
+and tested with [Vitest](https://vitest.dev/).
+
+```bash
+npm ci
+npm run lint        # xo (npm run lint:fix to auto-fix)
+npm test            # unit tests
+npm run coverage    # unit tests with coverage
+```
 
 ## Result examples
 ### desktop (600x450)
