@@ -48,6 +48,27 @@ jobs:
           TARGET_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash .github/scripts/ci-release.sh create
 
+  fail-missing-pre-script:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_missing-pre-script.yml
+    secrets: inherit
+
+  fail-pre-script-error:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_pre-script-error.yml
+    secrets: inherit
+
+  fail-pre-script-timeout:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_pre-script-timeout.yml
+    secrets: inherit
+
   fail-unknown-device:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -69,6 +90,13 @@ jobs:
     uses: ./.github/workflows/_pass_devices.yml
     secrets: inherit
 
+  pass-external-login-pre-script:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_external-login-pre-script.yml
+    secrets: inherit
+
   pass-full-page:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -88,6 +116,13 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_no-desktop.yml
+    secrets: inherit
+
+  pass-pre-script-login:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_pre-script-login.yml
     secrets: inherit
 
   pass-release-pr-comment:
@@ -132,12 +167,17 @@ jobs:
     needs:
       - test
       - lint-pr-title
+      - fail-missing-pre-script
+      - fail-pre-script-error
+      - fail-pre-script-timeout
       - fail-unknown-device
       - pass-all-defaults
       - pass-devices
+      - pass-external-login-pre-script
       - pass-full-page
       - pass-no-commit-hash-file-name
       - pass-no-desktop
+      - pass-pre-script-login
       - pass-release-pr-comment
       - pass-type
       - pass-uses-external-url

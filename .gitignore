@@ -68,3 +68,4 @@ typings/
 # CI scenario scratch output
 artifacts/
 action.log
+_login-requests.log

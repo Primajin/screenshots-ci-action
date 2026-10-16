@@ -1,0 +1,47 @@
+name: "Negative Test - pre-script error"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    name: "Should fail - a throwing pre-script fails the action"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Run with a pre-script that cannot succeed
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          preScriptPath: .github/smoke-fixtures/pre-throw.mjs
+      - name: Check the step failed
+        if: always()
+        run: |
+          if [ "${{ steps.action.outcome }}" == "failure" ]; then
+            echo "The action failed as expected"
+          else
+            echo "::error::The action did not fail"
+            exit 1
+          fi
+      - name: Check the error message
+        shell: bash
+        env:
+          INPUT_URL: http://localhost:8080/
+          PRE_SCRIPT_PATH: .github/smoke-fixtures/pre-throw.mjs
+        run: |
+          if node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+            echo "::error::Expected a non-zero exit code"
+            exit 1
+          fi
+          cat action.log
+          grep -q 'Failed to execute pre-script' action.log
+          grep -q 'pre-script boom' action.log
+          test -z "$(ls screenshots 2>/dev/null)"

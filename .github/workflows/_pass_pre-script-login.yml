@@ -1,0 +1,57 @@
+name: "Positive Test - pre-script login"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - a pre-script logs in once and the session is used by desktop and device captures"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the login fixture
+        run: |
+          rm -f _login-requests.log
+          nohup node .github/smoke-fixtures/login-server.js "$GITHUB_WORKSPACE/_login-requests.log" >/dev/null 2>&1 &
+          for _ in $(seq 1 40); do
+            curl -sf http://localhost:8081/login >/dev/null && break
+            sleep 0.25
+          done
+          curl -sf http://localhost:8081/login >/dev/null
+          # The readiness probes are not part of the assertion.
+          rm -f _login-requests.log
+      - name: Take screenshots behind a login
+        uses: ./
+        with:
+          url: http://localhost:8081/
+          devices: iPhone 13
+          type: png
+          preScriptPath: .github/smoke-fixtures/pre.mjs
+          preScriptTimeout: 30000
+      - name: Assert desktop and device screenshots exist
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "Pre-script login" --expect-count 8 --expect-from-name 'desktopPage*' --type png
+          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-*' --expect-count 1 --min-height 1900 --max-height 2000
+      - name: Assert the session cookie reached the desktop and the device capture
+        run: |
+          test -f _login-requests.log || { echo '::error::No server log'; exit 1; }
+          cat _login-requests.log
+          # Pre-script redirect + desktop capture + device capture = 3 requests
+          # for "/", all of which must carry the session cookie.
+          authed=$(grep -c '^GET / cookie=\[.*session=1.*\]$' _login-requests.log || true)
+          anon=$(grep -c '^GET / cookie=\[\]$' _login-requests.log || true)
+          echo "authenticated GET / requests: $authed, anonymous: $anon"
+          [ "$authed" -ge 3 ] || { echo '::error::Expected at least 3 authenticated requests'; exit 1; }
+          [ "$anon" -eq 0 ] || { echo '::error::A capture ran without the session cookie'; exit 1; }
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-pre-script-login
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn
