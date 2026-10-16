@@ -13,6 +13,12 @@
     "parserOptions": {
         "ecmaVersion": 2020
     },
+    "overrides": [
+      {
+        "files": ["*.test.js"],
+        "parserOptions": { "sourceType": "module" }
+      }
+    ],
     "rules": {
       "prettier/prettier": "error"
     }
