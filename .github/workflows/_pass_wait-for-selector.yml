@@ -1,0 +1,74 @@
+name: "Positive Test - wait for selector"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - visible, hidden and timeout 0 wait for the late element; a timeout still shoots"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Wait for #late to become visible
+        uses: ./
+        with:
+          url: http://localhost:8080/late.html
+          fullPage: true
+          waitForSelector: '#late'
+          waitForSelectorVisible: true
+      - name: Assert the page grew beyond 3000px (the selector was waited for)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "wait visible" --archive-to artifacts/wait-visible --match 'desktopPage*' --min-height 3000
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Wait for #spinner to be hidden
+        uses: ./
+        with:
+          url: http://localhost:8080/late.html
+          fullPage: true
+          waitForSelector: '#spinner'
+          waitForSelectorHidden: true
+      - name: Assert the page grew beyond 3000px (the selector was waited for)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "wait hidden" --archive-to artifacts/wait-hidden --match 'desktopPage*' --min-height 3000
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Wait for #late without a timeout
+        uses: ./
+        with:
+          url: http://localhost:8080/late.html
+          fullPage: true
+          waitForSelector: '#late'
+          waitForSelectorTimeout: 0
+      - name: Assert the page grew beyond 3000px (the selector was waited for)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "wait timeout 0" --archive-to artifacts/wait-timeout-0 --match 'desktopPage*' --min-height 3000
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Time out waiting (the screenshot is taken anyway)
+        uses: ./
+        with:
+          url: http://localhost:8080/late.html
+          noDesktop: true
+          devices: iPhone 13
+          fullPage: true
+          waitUntil: domcontentloaded
+          waitForSelector: '#late'
+          waitForSelectorTimeout: 300
+      - name: Assert the page was captured before #late appeared
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "wait timeout 300 (control)" --archive-to artifacts/wait-timeout-control --expect-count 1 --max-height 3000
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-wait-for-selector
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

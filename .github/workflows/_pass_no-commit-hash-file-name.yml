@@ -1,0 +1,45 @@
+name: "Positive Test - no commit hash file name"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - file names carry no hash or timestamp unless asked for"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take screenshots without the commit hash
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          noCommitHashFileName: true
+      - name: Assert plain file names
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "noCommitHashFileName true" --archive-to artifacts/without-hash --expect-count 8 --no-hash --expect 'iPhone_13.jpeg=1170x1992'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Take screenshots with the commit hash (control)
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          noCommitHashFileName: false
+      - name: Assert hash suffixed file names
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "noCommitHashFileName false" --archive-to artifacts/with-hash --expect-count 8 --with-hash
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-no-commit-hash-file-name
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn
