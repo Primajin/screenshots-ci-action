@@ -4,7 +4,8 @@
   "description": "Github Actions to screenshots website",
   "main": "index.js",
   "scripts": {
-    "lint": "eslint index.js telegram.js utils.js --fix",
+    "lint": "eslint index.js telegram.js utils.js",
+    "lint:fix": "eslint index.js telegram.js utils.js --fix",
     "test": "vitest run"
   },
   "keywords": [
