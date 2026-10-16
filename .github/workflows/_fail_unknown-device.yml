@@ -1,0 +1,44 @@
+name: "Negative Test - unknown device"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    name: "Should fail - an unknown device name fails the action with a suggestion"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Use a misspelled device
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          url: https://example.com
+          devices: iPhon 13
+      - name: Check the step failed
+        if: always()
+        run: |
+          if [ "${{ steps.action.outcome }}" == "failure" ]; then
+            echo "The action failed as expected"
+          else
+            echo "::error::The action did not fail"
+            exit 1
+          fi
+      - name: Check the error message suggests a valid device
+        shell: bash
+        env:
+          INPUT_URL: https://example.com
+          INPUT_DEVICES: iPhon 13
+        run: |
+          if node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+            echo "::error::Expected a non-zero exit code"
+            exit 1
+          fi
+          cat action.log
+          grep -q 'did you mean' action.log
+          test -z "$(ls screenshots 2>/dev/null)"

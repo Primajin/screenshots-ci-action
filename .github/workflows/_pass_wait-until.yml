@@ -1,0 +1,63 @@
+name: "Positive Test - wait until"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - domcontentloaded works and legacy networkidle0 is mapped with a log message"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take screenshots with domcontentloaded
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          waitUntil: domcontentloaded
+      - name: Assert 7 desktop screenshots
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "waitUntil domcontentloaded" --archive-to artifacts/domcontentloaded --expect-count 7 --expect-from-name 'desktopPage*'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Run with legacy networkidle0 and capture the log
+        shell: bash
+        env:
+          INPUT_URL: http://localhost:8080/
+          INPUT_NODESKTOP: true
+          INPUT_DEVICES: iPhone 13
+          INPUT_WAITUNTIL: networkidle0
+        run: |
+          node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
+          grep -q 'legacy Puppeteer value' action.log
+      - name: Assert the legacy value still produced a screenshot
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "waitUntil networkidle0 (legacy)" --archive-to artifacts/networkidle0 --expect-count 1 --expect 'iPhone_13-*=1170x1992'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Run with an unknown value and capture the log
+        shell: bash
+        env:
+          INPUT_URL: http://localhost:8080/
+          INPUT_NODESKTOP: true
+          INPUT_DEVICES: iPhone 13
+          INPUT_WAITUNTIL: bogus
+        run: |
+          node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
+          grep -q 'Unknown' action.log
+      - name: Assert the fallback still produced a screenshot
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "waitUntil bogus (fallback)" --archive-to artifacts/fallback --expect-count 1
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-wait-until
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

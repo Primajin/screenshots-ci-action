@@ -1,0 +1,49 @@
+name: "Positive Test - full page"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - fullPage true captures the whole page, false only the viewport"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take full page screenshots
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          fullPage: true
+          type: png
+      - name: Assert full page images are taller than the viewport
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "fullPage true (desktop)" --archive-to artifacts/full-page-true --match 'desktopPage*' --min-height 2000 --type png
+          node .github/scripts/assert-screenshots.mjs --title "fullPage true (device)" --archive-to artifacts/full-page-true --match 'iPhone_13-*' --min-height 5000 --type png
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Take viewport screenshots
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          fullPage: false
+          type: png
+      - name: Assert viewport sized images
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "fullPage false (desktop)" --archive-to artifacts/full-page-false --match 'desktopPage*' --expect-from-name 'desktopPage*' --max-height 1080
+          node .github/scripts/assert-screenshots.mjs --title "fullPage false (device)" --archive-to artifacts/full-page-false --expect 'iPhone_13-*=1170x1992' --match 'iPhone_13-*'
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-full-page
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

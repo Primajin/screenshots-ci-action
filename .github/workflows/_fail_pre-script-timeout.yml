@@ -1,0 +1,49 @@
+name: "Negative Test - pre-script timeout"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    name: "Should fail - a pre-script slower than pre-script-timeout fails the action"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Run with a pre-script that cannot succeed
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          preScriptPath: .github/smoke-fixtures/pre-slow.mjs
+          preScriptTimeout: 1000
+      - name: Check the step failed
+        if: always()
+        run: |
+          if [ "${{ steps.action.outcome }}" == "failure" ]; then
+            echo "The action failed as expected"
+          else
+            echo "::error::The action did not fail"
+            exit 1
+          fi
+      - name: Check the error message
+        shell: bash
+        env:
+          INPUT_URL: http://localhost:8080/
+          PRE_SCRIPT_PATH: .github/smoke-fixtures/pre-slow.mjs
+          PRE_SCRIPT_TIMEOUT: 1000
+        run: |
+          if node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+            echo "::error::Expected a non-zero exit code"
+            exit 1
+          fi
+          cat action.log
+          grep -q 'Failed to execute pre-script' action.log
+          grep -q 'timed out after 1000 ms' action.log
+          test -z "$(ls screenshots 2>/dev/null)"

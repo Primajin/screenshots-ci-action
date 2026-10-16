@@ -1,0 +1,31 @@
+name: "Positive Test - uses external URL"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - screenshots a public website"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Take screenshots of example.com
+        uses: ./
+        with:
+          url: https://example.com
+          devices: iPhone 13
+      - name: Assert desktop and device screenshots exist
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "External URL" --expect-count 8 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --type jpeg
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-uses-external-url
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn

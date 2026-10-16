@@ -1,0 +1,45 @@
+name: "Positive Test - type"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - png and jpeg produce matching content and extension"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take png screenshots
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          type: png
+      - name: Assert png magic bytes and extension
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "type png" --archive-to artifacts/png --expect-count 8 --type png
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Take jpeg screenshots
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13
+          type: jpeg
+      - name: Assert jpeg magic bytes and extension
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "type jpeg" --archive-to artifacts/jpeg --expect-count 8 --type jpeg
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-type
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn
