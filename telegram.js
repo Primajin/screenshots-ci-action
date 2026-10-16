@@ -1,5 +1,5 @@
-const fs = require('fs');
-const TelegramBot = require('node-telegram-bot-api');
+import fs from 'node:fs';
+import TelegramBot from 'node-telegram-bot-api';
 
 const OPTIONS = { disable_notification: true };
 
@@ -63,4 +63,4 @@ async function telegram({ teleChatId, teltBotToken, files, path }) {
   }
 }
 
-module.exports = telegram;
+export default telegram;

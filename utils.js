@@ -196,7 +196,7 @@ function buildContextOptions(descriptor = {}, storageState) {
   return options;
 }
 
-module.exports = {
+export {
   DEFAULT_WAITUNTIL_OPTION,
   DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT,
   DEVICES_DOCS_URL,

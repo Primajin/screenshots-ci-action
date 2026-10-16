@@ -1,8 +1,9 @@
 // Tiny login fixture for the pre-script smoke test.
 // GET /login -> form; POST /login -> Set-Cookie session=1; GET / -> LOGGED IN
 // only with the cookie. Every request's Cookie header is appended to argv[2].
-const http = require('http');
-const fs = require('fs');
+import http from 'node:http';
+import fs from 'node:fs';
+import process from 'node:process';
 
 const logFile = process.argv[2] || 'requests.log';
 http

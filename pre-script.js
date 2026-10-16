@@ -1,5 +1,6 @@
-const path = require('path');
-const { pathToFileURL } = require('url');
+import path from 'node:path';
+import process from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 const DEFAULT_PRE_SCRIPT_TIMEOUT = 30000;
 
@@ -87,7 +88,7 @@ const runPreScript = async ({
   return isCaptureStarted;
 };
 
-module.exports = {
+export {
   getPreScriptTimeout,
   loadPreScript,
   resolvePreScriptPath,

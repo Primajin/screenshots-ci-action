@@ -1,17 +1,18 @@
-const core = require('@actions/core');
-const io = require('@actions/io');
-const github = require('@actions/github');
-const { chromium, devices } = require('playwright');
-const fs = require('fs').promises;
-const telegram = require('./telegram.js');
-const { runPreScript } = require('./pre-script.js');
-const {
+import { promises as fs } from 'node:fs';
+import process from 'node:process';
+import * as core from '@actions/core';
+import * as io from '@actions/io';
+import * as github from '@actions/github';
+import { chromium, devices } from 'playwright';
+import telegram from './telegram.js';
+import { runPreScript } from './pre-script.js';
+import {
   buildContextOptions,
   buildSelectorWaitOptions,
   formatInvalidDevicesError,
   mapWaitUntil,
   resolveDevices,
-} = require('./utils.js');
+} from './utils.js';
 
 const DEFAULT_DESKTOP_VIEWPOINT_RATIO = [
   { width: 540, height: 405 },

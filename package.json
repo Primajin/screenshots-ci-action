@@ -2,7 +2,21 @@
   "name": "screenshots-ci-action",
   "version": "3.2.0",
   "description": "Github Actions to screenshots website",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Primajin/screenshots-ci-action.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Primajin/screenshots-ci-action/issues"
+  },
+  "homepage": "https://github.com/Primajin/screenshots-ci-action#readme",
+  "author": "Primajin",
+  "type": "module",
   "main": "index.js",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "lint": "eslint index.js telegram.js utils.js pre-script.js pre-script.test.js",
     "lint:fix": "eslint index.js telegram.js utils.js pre-script.js pre-script.test.js --fix",
@@ -13,16 +27,6 @@
     "Actions",
     "screenshot"
   ],
-  "author": "Primajin",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Primajin/screenshots-ci-action.git"
-  },
-  "bugs": {
-    "url": "https://github.com/Primajin/screenshots-ci-action/issues"
-  },
-  "homepage": "https://github.com/Primajin/screenshots-ci-action#readme",
   "dependencies": {
     "@actions/core": "^1.10.1",
     "@actions/github": "^5.0.3",
