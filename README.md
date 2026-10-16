@@ -7,21 +7,22 @@ Telegram chat.
 
 [![Release](https://img.shields.io/github/v/release/Primajin/screenshots-ci-action?sort=semver&label=release)](https://github.com/Primajin/screenshots-ci-action/releases)
 [![Runtime](https://img.shields.io/badge/runtime-node24-brightgreen?logo=node.js&logoColor=white)](action.yml)
-[![puppeteer](https://img.shields.io/badge/puppeteer-v24-40b5a4?logo=puppeteer)](https://pptr.dev/)
+[![Playwright](https://img.shields.io/badge/playwright-chromium-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 > **A maintained, modernized fork** of
 > [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action)
 > (last released 2022). If you're weighing the two, here's what this fork brings:
 >
-> - 🐛 **`fullPage: false` actually works.** The original bundles puppeteer 14,
->   which ignored `fullPage: false` for emulated mobile devices and captured the
->   whole scrollable page anyway (a single iPad Pro shot came out ~25 000 px
->   tall). This fork runs **puppeteer v24**, so viewport screenshots behave as
->   documented.
-> - 🟢 **Current runtime.** Runs on the **Node 24** action runtime (latest LTS);
->   the original still targets the end-of-life `node16`.
-> - 📱 **Up-to-date device list** via puppeteer's `KnownDevices`.
+> - 🐛 **`fullPage: false` actually works.** The original bundles an old
+>   Puppeteer 14, which ignored `fullPage: false` for emulated mobile devices
+>   and captured the whole scrollable page anyway (a single iPad Pro shot came
+>   out ~25 000 px tall). This fork runs on **Playwright** (Chromium), so
+>   viewport screenshots behave as documented.
+> - 🟢 **Current runtime.** A composite action that installs its own
+>   dependencies and Chromium on **Node 24**; the original still targets the
+>   end-of-life `node16`.
+> - 📱 **Up-to-date device list** via Playwright's built-in device descriptors.
 > - 🚀 **Actively released** with
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
 >   major with `Primajin/screenshots-ci-action@v3`.
@@ -39,11 +40,11 @@ Telegram chat.
 | `fullPage`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
 | `noCommitHashFileName`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
 | `type`(string) | optional(`jpeg`) | Specify screenshot type, can be either `jpeg` or `png`. |
-| `waitUntil`(string) | optional(`networkidle0`) | When to consider navigation succeeded. <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle0`: consider navigation to be finished when there are no more than 0 network connections for at least `500` ms.<br> - `networkidle2`: consider navigation to be finished when there are no more than 2 network connections for at least `500` ms. <br><br> Consider set to `networkidle2` when target website has **long polling request**.|
-| `waitForSelector`(string) | optional(`''`) | Wait for the **selector** to appear in page. If the **selector** doesn't appear after the `waitForSelectorTimeout` of waiting, it will take screenshots immediately. <br> See [README.waitForSelector](/README.waitForSelector.md) for example |
+| `waitUntil`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
+| `waitForSelector`(string) | optional(`''`) | Wait for the **selector** to be attached to the DOM (Playwright state `attached`). If the **selector** doesn't appear after the `waitForSelectorTimeout` of waiting, it will take screenshots immediately. <br> See [README.waitForSelector](/README.waitForSelector.md) for example |
 | `waitForSelectorTimeout`(number) | optional(`30000`) | **WaitForSelector Options:** <br> Maximum time to wait in milliseconds. Pass `0` to disable timeout. <br> - `30000` means 30 seconds |
-| `waitForSelectorVisible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible, i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
-| `waitForSelectorHidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden, i.e. have `display: none` or `visibility: hidden` CSS properties. |
+| `waitForSelectorVisible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible (Playwright state `visible`), i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
+| `waitForSelectorHidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden (Playwright state `hidden`), i.e. have `display: none` or `visibility: hidden` CSS properties. |
 | `releaseId`(string) | optional(`"`) | Github Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
 
 ## Envs
@@ -85,15 +86,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master # Required for headful puppeteer
-      env:
-        CI: 'true'
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
         url: https://github.com
-        devices: iPhone 6,iPhone 6 landscape,Nexus 7,Pad Pro,Galaxy S III landscape,iPad Pro landscape
+        devices: iPhone 6,iPhone 6 landscape,Nexus 7,iPad Pro 11,Galaxy S III landscape,iPad Pro 11 landscape
     - uses: actions/upload-artifact@v4 # Uplaod screenshots to Actions Artifacts via actions/upload-artifact@v4
       with:
         path: screenshots
@@ -114,10 +111,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
@@ -146,10 +139,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
     - name: screenshots-desktop-facebook
       uses: Primajin/screenshots-ci-action@v3
       with:
@@ -197,14 +186,41 @@ jobs:
 
 ### Supported mobile devices
 
-The `devices` input accepts any name from puppeteer's
-[`KnownDevices`](https://pptr.dev/api/puppeteer.knowndevices). Pass the base
-name for portrait, or append ` landscape` for the landscape orientation
-(e.g. `iPad Pro landscape`). puppeteer's list is the source of truth and is
-kept current by upgrading puppeteer in this fork.
+The `devices` input accepts any name from
+[Playwright's device list](https://github.com/microsoft/playwright/blob/main/packages/playwright-core/src/server/deviceDescriptorsSource.json)
+(`playwright.devices`). Pass the base name for portrait, or append
+` landscape` for the landscape orientation (e.g. `iPad Pro 11 landscape`).
+Separate several devices with a comma. Names are matched exactly; a name that
+only differs in case is accepted. The list is kept current by upgrading
+Playwright.
+
+An **unknown device name fails the run** and the error lists close matches
+("did you mean ...") together with the link above.
+
+#### Migrating from the Puppeteer based versions (v3 and earlier)
+
+Playwright's list differs from Puppeteer's `KnownDevices`:
+
+| Puppeteer name (removed) | Use instead |
+| ------------- | ------------- |
+| `iPad` | `iPad (gen 5)`, `iPad (gen 6)`, `iPad (gen 7)` or `iPad (gen 11)` |
+| `iPad Pro` | `iPad Pro 11` |
+| `iPhone 4`, `iPhone 5` | no equivalent, closest is `iPhone 6` |
+| `JioPhone 2` | no equivalent |
+
+Playwright additionally knows many newer devices (iPhone 16/17 family, Pixel
+6-10, Galaxy S24, Galaxy Z Fold/Flip, ...) and the `Desktop Chrome`,
+`Desktop Edge`, `Desktop Firefox` and `Desktop Safari` profiles. Names that
+exist in both lists (for example `iPhone 13`, `Pixel 5`, `Galaxy S III`) keep
+working, but their emulated viewport/user agent may differ slightly between
+Puppeteer's and Playwright's data.
+
+Other behaviour changes: `waitUntil: networkidle0` and `networkidle2` both map
+to Playwright's `networkidle` (see the parameter table), and each device is
+rendered in its own browser context.
 
 <details>
-<summary>All 66 base devices (as of puppeteer v24 — 131 orientations)</summary>
+<summary>Base devices known to Playwright (as of Playwright 1.64; append ` landscape` for the landscape variant)</summary>
 
 `Blackberry PlayBook`
 `BlackBerry Z30`
@@ -214,15 +230,24 @@ kept current by upgrading puppeteer in this fork.
 `Galaxy S5`
 `Galaxy S8`
 `Galaxy S9+`
+`Galaxy S24`
+`Galaxy A55`
 `Galaxy Tab S4`
-`iPad`
+`Galaxy Tab S9`
+`Galaxy Z Fold 6`
+`Galaxy Z Fold 6 Cover`
+`Galaxy Z Fold 7`
+`Galaxy Z Fold 7 Cover`
+`Galaxy Z Flip 6`
+`Galaxy Z Flip 6 Cover`
+`Galaxy Z Flip 7`
+`Galaxy Z Flip 7 Cover`
+`iPad (gen 5)`
 `iPad (gen 6)`
 `iPad (gen 7)`
+`iPad (gen 11)`
 `iPad Mini`
-`iPad Pro`
 `iPad Pro 11`
-`iPhone 4`
-`iPhone 5`
 `iPhone 6`
 `iPhone 6 Plus`
 `iPhone 7`
@@ -230,6 +255,7 @@ kept current by upgrading puppeteer in this fork.
 `iPhone 8`
 `iPhone 8 Plus`
 `iPhone SE`
+`iPhone SE (3rd gen)`
 `iPhone X`
 `iPhone XR`
 `iPhone 11`
@@ -251,7 +277,16 @@ kept current by upgrading puppeteer in this fork.
 `iPhone 15 Plus`
 `iPhone 15 Pro`
 `iPhone 15 Pro Max`
-`JioPhone 2`
+`iPhone 16`
+`iPhone 16 Plus`
+`iPhone 16 Pro`
+`iPhone 16 Pro Max`
+`iPhone 16e`
+`iPhone 17`
+`iPhone Air`
+`iPhone 17 Pro`
+`iPhone 17 Pro Max`
+`iPhone 17e`
 `Kindle Fire HDX`
 `LG Optimus L70`
 `Microsoft Lumia 550`
@@ -271,9 +306,22 @@ kept current by upgrading puppeteer in this fork.
 `Pixel 4`
 `Pixel 4a (5G)`
 `Pixel 5`
+`Pixel 6`
+`Pixel 6 Pro`
+`Pixel 6a`
+`Pixel 7`
+`Pixel 7 Pro`
+`Pixel 7a`
+`Pixel 8`
+`Pixel 8 Pro`
+`Pixel 8a`
+`Pixel 9`
+`Pixel 9 Pro`
+`Pixel 9 Pro XL`
+`Pixel 10`
+`Pixel 10 Pro`
+`Pixel 10 Pro XL`
 `Moto G4`
-
-Append ` landscape` to any of the above for its landscape variant.
 
 </details>
 

@@ -14,10 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v3
       with:
@@ -31,3 +27,8 @@ jobs:
         path: screenshots
         name: Download-screenshots
 ```
+
+The selector wait uses Playwright states: `attached` by default, `visible` with
+`waitForSelectorVisible: true` and `hidden` with `waitForSelectorHidden: true`
+(if both are set, `visible` wins). `waitForSelectorTimeout: 0` disables the
+timeout. On a timeout the error is logged and the screenshot is taken anyway.
