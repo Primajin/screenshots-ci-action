@@ -63,6 +63,45 @@ describe('parseImage', () => {
 		});
 	});
 
+	it('skips an EXIF thumbnail and returns the size of the real SOF2 frame', () => {
+		// APP1 payload: "Exif" header plus an embedded thumbnail that itself
+		// starts with SOI + SOF0 (16x16). The parser must skip the whole segment.
+		const thumbnail = Buffer.from([
+			0xFF,
+			0xD8,
+			0xFF,
+			0xC0,
+			0x00,
+			0x0B,
+			0x08,
+			0x00,
+			0x10,
+			0x00,
+			0x10,
+			0x01,
+			0x01,
+			0x11,
+			0x00,
+		]);
+		const payload = Buffer.concat([Buffer.from('Exif\0\0'), thumbnail]);
+		const app1 = Buffer.alloc(4);
+		app1[0] = 0xFF;
+		app1[1] = 0xE1;
+		app1.writeUInt16BE(payload.length + 2, 2);
+		const progressive = jpeg(1170, 1992, 0xC2);
+		const buffer = Buffer.concat([
+			progressive.subarray(0, 2),
+			app1,
+			payload,
+			progressive.subarray(2),
+		]);
+		expect(parseImage(buffer)).toEqual({
+			format: 'jpeg',
+			width: 1170,
+			height: 1992,
+		});
+	});
+
 	it('rejects unknown content and truncated files', () => {
 		expect(() => parseImage(Buffer.from('GIF89a'))).toThrow('magic bytes');
 		expect(() => parseImage(png(1, 1).subarray(0, 20))).toThrow('IHDR');
@@ -155,6 +194,35 @@ describe('checkScreenshots', () => {
 			'a-1234567.png: expected 20x20, got 10x10',
 			'--expect b*=1x1: no file matches "b*"',
 		]);
+	});
+
+	it('fails per-file options that select zero files instead of passing vacuously', () => {
+		write('desktopPage1x1.png', png(1, 1));
+		const options = [
+			['match', {match: 'iPhone*'}],
+			['min-height', {match: 'iPhone*', minHeight: 1}],
+			['max-height', {match: 'iPhone*', maxHeight: 9}],
+			['type', {match: 'iPhone*', type: 'png'}],
+			['no-hash', {match: 'iPhone*', noHash: true}],
+			['with-hash', {match: 'iPhone*', withHash: true}],
+			['expect-from-name', {match: 'iPhone*', expectFromName: '*'}],
+		];
+		for (const [name, option] of options) {
+			const {errors} = checkScreenshots(directory, option);
+			expect(errors[0], name).toMatch(
+				'No file matches "iPhone*" but per-file assertions were requested',
+			);
+			expect(errors[0], name).toContain(name);
+		}
+	});
+
+	it('does not complain about an empty selection without per-file options', () => {
+		expect(checkScreenshots(directory, {expectCount: 0}).errors).toEqual([]);
+		expect(checkScreenshots(directory, {}).errors).toEqual([]);
+	});
+
+	it('fails an empty directory when a type is expected', () => {
+		expect(checkScreenshots(directory, {type: 'png'}).errors).toHaveLength(1);
 	});
 
 	it('flags height bounds', () => {
@@ -259,6 +327,24 @@ describe('main (CLI)', () => {
 
 	const run = (...args) =>
 		main(['--dir', path.join(directory, 'shots'), ...args]);
+
+	it('wires --match, --no-hash, --with-hash and --expect-absent through main', () => {
+		fs.writeFileSync(
+			path.join(directory, 'shots', 'desktopPage1x1-abc1234.jpeg'),
+			jpeg(1, 1),
+		);
+		// IPhone_13.jpeg has no hash suffix, desktopPage1x1-abc1234.jpeg has one.
+		expect(run('--no-hash')).toBe(1);
+		expect(run('--with-hash')).toBe(1);
+		expect(run('--match', 'iPhone*', '--no-hash')).toBe(0);
+		expect(run('--match', 'desktop*', '--with-hash')).toBe(0);
+		expect(run('--match', 'desktop*', '--no-hash')).toBe(1);
+		expect(run('--expect-absent', 'desktop*')).toBe(1);
+		expect(run('--expect-absent', 'nothing*')).toBe(0);
+		expect(run('--match', 'nope*', '--type', 'jpeg')).toBe(1);
+		// A match that selects nothing is an error even with an explicit count
+		expect(run('--match', 'nope*', '--expect-count', '0')).toBe(1);
+	});
 
 	it('returns 0, writes the summary and archives the files on success', () => {
 		const archive = path.join(directory, 'archive');

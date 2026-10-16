@@ -178,6 +178,16 @@ export function checkScreenshots(directory, options = {}) {
 		errors.push(`Directory "${directory}" does not exist`);
 	}
 
+	// Per-file options on an empty selection would pass vacuously.
+	const perFileOptions = perFileOptionNames(options);
+	if (exists && names.length === 0 && perFileOptions.length > 0) {
+		errors.push(
+			`No file matches "${matchGlob}" but per-file assertions were requested (${perFileOptions.join(
+				', ',
+			)})`,
+		);
+	}
+
 	for (const name of names) {
 		const buffer = fs.readFileSync(path.join(directory, name));
 		try {
@@ -202,6 +212,27 @@ export function checkScreenshots(directory, options = {}) {
 		checkRow(row, options, errors);
 	}
 
+	checkExpectations({
+		rows, allNames, options, errors,
+	});
+
+	return {errors, rows};
+}
+
+// Options that apply to each selected file and so need a non-empty selection.
+function perFileOptionNames(options) {
+	return [
+		options.match && options.match !== '*' ? 'match' : undefined,
+		options.minHeight === undefined ? undefined : 'min-height',
+		options.maxHeight === undefined ? undefined : 'max-height',
+		options.type ? 'type' : undefined,
+		options.noHash ? 'no-hash' : undefined,
+		options.withHash ? 'with-hash' : undefined,
+		options.expectFromName ? 'expect-from-name' : undefined,
+	].filter(Boolean);
+}
+
+function checkExpectations({rows, allNames, options, errors}) {
 	for (const expectation of options.expect || []) {
 		const [glob, dimensions] = expectation.split('=', 2);
 		const expected = parseDimensions(dimensions);
@@ -227,8 +258,6 @@ export function checkScreenshots(directory, options = {}) {
 			errors.push(`${name}: no file matching "${glob}" expected`);
 		}
 	}
-
-	return {errors, rows};
 }
 
 export function toMarkdown(title, rows) {
