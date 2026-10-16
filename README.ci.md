@@ -19,6 +19,11 @@ The `All checks green` job aggregates them.
 | `pass-uses-external-url` | a public site (example.com) |
 | `pass-release-pr-comment` | upload to the CI pre-release and the PR comment with images (see below) |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
+| `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
+| `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
+| `fail-pre-script-timeout` | a slow pre-script fails the action with `timed out after 1000 ms` |
+| `fail-pre-script-error` | a throwing pre-script fails with the `Failed to execute pre-script` prefix |
+| `fail-missing-pre-script` | a missing pre-script file fails with the same prefix |
 
 Each scenario uploads its screenshots as a workflow artifact (7 days) and
 writes a table (file, format, dimensions, size) to the job summary.
@@ -32,6 +37,8 @@ writes a table (file, format, dimensions, size) to the job summary.
   `http://localhost:8080/` and waits until it answers.
 - `.github/smoke-fixtures/site` - a tall page and a page that adds `#late`
   after 4 seconds.
+- `.github/smoke-fixtures/*.mjs`, `login-server.js` - pre-scripts and the local
+  login server for the pre-script scenarios.
 
 ## The CI pre-release
 
