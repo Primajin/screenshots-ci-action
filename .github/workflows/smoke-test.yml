@@ -2,9 +2,9 @@ name: Smoke Test
 
 # Runs the action from this checkout (`uses: ./`) against a locally served,
 # deliberately tall page, then asserts the mobile screenshots are viewport
-# sized rather than full-page. This guards the puppeteer bug that motivated the
-# fork: an emulated device with `fullPage: false` must NOT capture the whole
-# scrollable page.
+# sized rather than full-page. This guards the bug that motivated the fork: an
+# emulated device with `fullPage: false` must NOT capture the whole scrollable
+# page.
 
 on:
   pull_request:
@@ -39,7 +39,7 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/
-          devices: iPhone 13,iPad Pro,iPad Pro landscape
+          devices: iPhone 13,iPad Pro 11,iPad Pro 11 landscape
           noDesktop: true
           fullPage: false
           type: png
@@ -62,12 +62,13 @@ jobs:
           for f, (w, h) in dims.items():
               print(f'{f}: {w}x{h}')
 
-          # iPad Pro portrait viewport is 1024x1366 @2x = 2048x2732. The fixture
-          # is ~10 viewports tall, so a full-page capture would be >20000px.
+          # iPad Pro 11 portrait viewport is 834x1194 @2x = 1668x2388. The
+          # fixture is ~10 viewports tall, so a full-page capture would be
+          # >20000px.
           ipad = next((d for f, d in dims.items()
-                       if '/iPad_Pro-' in '/' + f), None)
+                       if '/iPad_Pro_11-' in '/' + f), None)
           if ipad is None:
-              sys.exit('FAIL: no iPad Pro portrait screenshot found')
+              sys.exit('FAIL: no iPad Pro 11 portrait screenshot found')
           if ipad[1] >= 4000:
               sys.exit(f'FAIL: iPad Pro height {ipad[1]}px looks like a '
                        f'full-page capture — fullPage:false regressed')

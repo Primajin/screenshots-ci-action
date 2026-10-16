@@ -35,9 +35,9 @@ jobs:
         run: npm ci
       - name: Run lint
         run: npm run lint
-  build:
+  unit-test:
     runs-on: ubuntu-latest
-    name: Make sure the bundled dist/ is up to date.
+    name: Run unit tests.
     env:
       NODE_VERSION: '24'
     steps:
@@ -61,12 +61,5 @@ jobs:
           npm cache clean --force
       - name: Install dependencies
         run: npm ci
-      - name: Run build
-        run: npm run build
-      - name: Fail if dist/ is out of date
-        run: |
-          if [ -n "$(git status --porcelain dist)" ]; then
-            echo "::error::dist/ is out of date. Run 'npm run build' and commit the result."
-            git diff dist
-            exit 1
-          fi
+      - name: Run tests
+        run: npm test
