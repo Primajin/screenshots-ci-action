@@ -12,7 +12,7 @@ jobs:
     name: "Should fail - a pre-script path that does not exist fails the action"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Run with a pre-script that cannot succeed

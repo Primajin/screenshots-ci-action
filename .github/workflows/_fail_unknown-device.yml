@@ -12,7 +12,7 @@ jobs:
     name: "Should fail - an unknown device name fails the action with a suggestion"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Use a misspelled device
         id: action
         continue-on-error: true

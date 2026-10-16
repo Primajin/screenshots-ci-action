@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - fullPage true captures the whole page, false only the viewport"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take full page screenshots

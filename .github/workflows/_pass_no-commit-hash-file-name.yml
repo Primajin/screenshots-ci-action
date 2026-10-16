@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - file names carry no hash or timestamp unless asked for"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take screenshots without the commit hash

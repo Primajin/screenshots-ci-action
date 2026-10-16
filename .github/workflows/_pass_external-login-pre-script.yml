@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - a pre-script logs in on an external login page before capture"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Log in on the public demo, then take screenshots
         uses: ./
         with:
