@@ -1,7 +1,7 @@
 {
   "name": "screenshots-ci-action",
   "version": "3.2.0",
-  "description": "Github Actions to screenshots website",
+  "description": "GitHub Action that captures desktop and multi-device website screenshots with Playwright and saves them as artifacts, posts them to pull requests or sends them to Telegram",
   "license": "MIT",
   "repository": "github:Primajin/screenshots-ci-action",
   "homepage": "https://github.com/Primajin/screenshots-ci-action#readme",
@@ -33,8 +33,15 @@
   ],
   "keywords": [
     "github-action",
+    "github-actions",
     "screenshot",
+    "screenshots",
     "playwright",
+    "chromium",
+    "responsive",
+    "devices",
+    "pull-request",
+    "telegram",
     "ci"
   ],
   "dependencies": {
