@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzePng,
   checkScreenshots,
+  compareSliced,
   decodePng,
   detectFormat,
   globToRegExp,
@@ -612,6 +613,148 @@ describe('main (pixel flags)', () => {
     } finally {
       vi.restoreAllMocks();
       fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('analyzePng, partial bands', () => {
+  it('does not count a one row last band of busy pixels as blank', () => {
+    // 250 rows + 1 row: the last band has only row 250, which is not a multiple of 3
+    const image = encodePng(60, 251, busy());
+    expect(analyzePng(image)).toMatchObject({ bands: 2, flatBands: 0 });
+  });
+
+  it('still counts a blank one row last band as blank', () => {
+    const image = encodePng(60, 251, (x, y) =>
+      y < 250 ? busy()(x, y) : blank()
+    );
+    expect(analyzePng(image)).toMatchObject({ bands: 2, flatBands: 1 });
+  });
+});
+
+describe('compareSliced', () => {
+  let root;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-compare-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  // Writes the parts of the busy test page; `starts` are the source rows each
+  // part begins at, so a gap or an overlap is a start that is off by a pixel.
+  const writeParts = (name, parts) => {
+    const directory = path.join(root, name);
+    fs.mkdirSync(directory);
+    parts.forEach(({ start, height }, index) => {
+      fs.writeFileSync(
+        path.join(directory, `p-part${index + 1}-abc1234.png`),
+        encodePng(40, height, busy(start))
+      );
+    });
+    return directory;
+  };
+
+  it('accepts the same page cut at different heights', () => {
+    const a = writeParts('a', [
+      { start: 0, height: 400 },
+      { start: 400, height: 300 },
+      { start: 700, height: 300 },
+    ]);
+    const b = writeParts('b', [
+      { start: 0, height: 500 },
+      { start: 500, height: 500 },
+    ]);
+    expect(compareSliced(a, b)).toEqual({ errors: [], rows: 1000 });
+  });
+
+  it('orders parts by number, not by text (part10 after part2)', () => {
+    const directory = path.join(root, 'many');
+    fs.mkdirSync(directory);
+    for (let index = 0; index < 11; index++) {
+      fs.writeFileSync(
+        path.join(directory, `p-part${index + 1}-abc1234.png`),
+        encodePng(20, 10, busy(index * 10))
+      );
+    }
+    const single = path.join(root, 'single');
+    fs.mkdirSync(single);
+    fs.writeFileSync(
+      path.join(single, 'p-abc1234.png'),
+      encodePng(20, 110, busy(0))
+    );
+    expect(compareSliced(directory, single).errors).toEqual([]);
+  });
+
+  it('fails on a one pixel gap at a seam (control)', () => {
+    const a = writeParts('a', [{ start: 0, height: 1000 }]);
+    const b = writeParts('b', [
+      { start: 0, height: 500 },
+      { start: 501, height: 500 }, // row 500 of the page is missing
+    ]);
+    const { errors } = compareSliced(a, b);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(
+      /rows differ, the first is row 500 \(p-part1-abc1234.png in .*\/a, p-part2-abc1234.png in .*\/b\)/
+    );
+  });
+
+  it('fails on a one pixel overlap at a seam (control)', () => {
+    const a = writeParts('a', [{ start: 0, height: 1000 }]);
+    const b = writeParts('b', [
+      { start: 0, height: 500 },
+      { start: 499, height: 500 }, // row 499 is repeated
+    ]);
+    expect(compareSliced(a, b).errors[0]).toContain('the first is row 500');
+  });
+
+  it('reports different total heights', () => {
+    const a = writeParts('a', [{ start: 0, height: 1000 }]);
+    const b = writeParts('b', [
+      { start: 0, height: 500 },
+      { start: 500, height: 499 },
+    ]);
+    expect(compareSliced(a, b).errors[0]).toContain(
+      'different heights: 1000 rows in'
+    );
+  });
+
+  it('needs pngs and existing directories', () => {
+    const a = writeParts('a', [{ start: 0, height: 10 }]);
+    const jpegDirectory = path.join(root, 'jpeg');
+    fs.mkdirSync(jpegDirectory);
+    fs.writeFileSync(path.join(jpegDirectory, 'p-part1.jpeg'), jpeg(10, 10));
+    expect(compareSliced(a, jpegDirectory).errors).toContain(
+      'p-part1.jpeg: pixel checks need a png'
+    );
+    expect(compareSliced(a, path.join(root, 'missing')).errors[0]).toContain(
+      'does not exist'
+    );
+    const empty = path.join(root, 'empty');
+    fs.mkdirSync(empty);
+    expect(compareSliced(a, empty).errors[0]).toContain('No images in');
+  });
+
+  it('is wired into main with two directories', () => {
+    const a = writeParts('a', [{ start: 0, height: 600 }]);
+    const b = writeParts('b', [
+      { start: 0, height: 300 },
+      { start: 300, height: 300 },
+    ]);
+    const c = writeParts('c', [
+      { start: 0, height: 300 },
+      { start: 301, height: 300 },
+    ]);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(main(['--compare-sliced', a, b])).toBe(0);
+      expect(main(['--compare-sliced', a, c])).toBe(1);
+      expect(() => main(['--compare-sliced', a])).toThrow('two directories');
+    } finally {
+      vi.restoreAllMocks();
     }
   });
 });

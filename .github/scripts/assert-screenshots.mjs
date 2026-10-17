@@ -198,7 +198,7 @@ export function analyzePng(buffer, bandHeight = BAND_HEIGHT) {
       topHash.update(row);
     }
 
-    if (y % 3 === 0) {
+    if (y % 3 === 0 || y % bandHeight === 0) {
       for (let x = 0; x < row.length; x += 3 * channels) {
         for (let c = 0; c < sampledChannels(channels); c++) {
           low[c] = Math.min(low[c], row[x + c]);
@@ -487,10 +487,102 @@ const toFraction = (value) => {
   return number;
 };
 
+// ---- comparing two sliced captures ----
+
+const PART_NUMBER = /-part(\d+)(?=-|\.)/;
+const partNumber = (name) => {
+  const match = PART_NUMBER.exec(name);
+  return match ? Number(match[1]) : 0;
+};
+
+// The row hashes of all png parts of a capture, top to bottom, plus the size.
+function sliceRows(directory, errors) {
+  const hashes = [];
+  const parts = [];
+  let width;
+  if (!fs.existsSync(directory)) {
+    errors.push(`Directory "${directory}" does not exist`);
+    return { hashes, parts, width };
+  }
+
+  const names = fs
+    .readdirSync(directory)
+    .filter((name) => /\.(png|jpe?g)$/.test(name))
+    .sort((a, b) => partNumber(a) - partNumber(b) || a.localeCompare(b));
+  if (names.length === 0) {
+    errors.push(`No images in "${directory}"`);
+  }
+
+  for (const name of names) {
+    const buffer = fs.readFileSync(path.join(directory, name));
+    if (detectFormat(buffer) !== 'png') {
+      errors.push(`${name}: pixel checks need a png`);
+      continue;
+    }
+
+    parts.push({ name, start: hashes.length });
+    decodePng(buffer, (y, row) => {
+      if (y === 0) {
+        width = width === undefined ? row.length : width;
+      }
+
+      hashes.push(
+        crypto.createHash('sha1').update(row).digest('base64').slice(0, 12)
+      );
+    });
+  }
+
+  return { hashes, parts, width };
+}
+
+const partAt = (parts, row) =>
+  parts.reduce((found, part) => (part.start <= row ? part.name : found), '');
+
+// Concatenating the parts of two captures of the same page, cut at different
+// heights, must give the same pixel rows: a gap or an overlap at a seam shows
+// up as the first differing row. Returns {errors, rows}.
+export function compareSliced(directoryA, directoryB) {
+  const errors = [];
+  const a = sliceRows(directoryA, errors);
+  const b = sliceRows(directoryB, errors);
+  if (errors.length > 0) {
+    return { errors, rows: 0 };
+  }
+
+  if (a.hashes.length !== b.hashes.length) {
+    errors.push(
+      `The captures have different heights: ${a.hashes.length} rows in ${directoryA}, ${b.hashes.length} in ${directoryB}`
+    );
+  }
+
+  const shared = Math.min(a.hashes.length, b.hashes.length);
+  let differing = 0;
+  let first = -1;
+  for (let row = 0; row < shared; row++) {
+    if (a.hashes[row] !== b.hashes[row]) {
+      differing++;
+      first = first === -1 ? row : first;
+    }
+  }
+
+  if (differing > 0) {
+    errors.push(
+      `${differing} of ${shared} rows differ, the first is row ${first} (${partAt(
+        a.parts,
+        first
+      )} in ${directoryA}, ${partAt(b.parts, first)} in ${directoryB})`
+    );
+  }
+
+  return { errors, rows: shared };
+}
+
 export function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
     args: argv,
+    allowPositionals: true,
     options: {
+      'compare-sliced': { type: 'boolean', default: false },
       dir: { type: 'string', default: 'screenshots' },
       match: { type: 'string', default: '*' },
       'expect-count': { type: 'string' },
@@ -509,6 +601,25 @@ export function main(argv = process.argv.slice(2)) {
       'archive-to': { type: 'string' },
     },
   });
+
+  if (values['compare-sliced']) {
+    if (positionals.length !== 2) {
+      throw new Error('--compare-sliced needs two directories');
+    }
+
+    const result = compareSliced(positionals[0], positionals[1]);
+    for (const error of result.errors) {
+      console.error(`::error::${error}`);
+    }
+
+    if (result.errors.length === 0) {
+      console.log(
+        `OK: both sliced captures consist of the same ${result.rows} pixel rows`
+      );
+    }
+
+    return result.errors.length > 0 ? 1 : 0;
+  }
 
   const { errors, rows } = checkScreenshots(values.dir, {
     match: values.match,

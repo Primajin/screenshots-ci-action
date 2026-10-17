@@ -63,12 +63,23 @@ function renderCommentBody(uploaded, allFiles) {
       ''
     );
     const lines = entries.map((e) => `- part ${e.part} of ${total}: ${e.url}`);
+    const missing = [];
+    for (let part = 1; part <= total; part++) {
+      if (!entries.some((e) => e.part === part)) {
+        missing.push(part);
+      }
+    }
+    const failed = missing.length
+      ? ` (part${missing.length > 1 ? 's' : ''} ${missing.join(
+          ', '
+        )} failed to upload)`
+      : '';
     const images = entries
       .map((e) => `<img src=${e.url} alt="part ${e.part} of ${total}" />`)
       .join('');
     blocks.push({
       key: entries[0].url,
-      text: `## ${heading} (${total} parts, ${size} total)\n${lines.join(
+      text: `## ${heading} (${total} parts, ${size} total)${failed}\n${lines.join(
         '\n'
       )}\n\n${images}\n\n`,
     });

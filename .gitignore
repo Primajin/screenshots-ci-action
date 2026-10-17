@@ -69,3 +69,4 @@ typings/
 artifacts/
 action.log
 _login-requests.log
+control.log

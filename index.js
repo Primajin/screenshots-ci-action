@@ -5,7 +5,11 @@ const { chromium, devices } = require('playwright');
 const fs = require('fs').promises;
 const telegram = require('./telegram.js');
 const { runPreScript } = require('./pre-script.js');
-const { resolveMaxImageHeight, takeScreenshot } = require('./capture.js');
+const {
+  isScrollEnabled,
+  resolveMaxImageHeight,
+  takeScreenshot,
+} = require('./capture.js');
 const { renderCommentBody } = require('./comment.js');
 const {
   buildContextOptions,
@@ -61,8 +65,9 @@ async function run() {
     const noDesktop = core.getInput('noDesktop') === 'true';
     const fullPage = core.getInput('fullPage') === 'true';
     // Only matters for full page captures; on unless explicitly switched off.
-    const scrollBeforeCapture =
-      core.getInput('scrollBeforeCapture').toLowerCase() !== 'false';
+    const scrollBeforeCapture = isScrollEnabled(
+      core.getInput('scrollBeforeCapture')
+    );
     const maxImage = resolveMaxImageHeight(core.getInput('maxImageHeight'));
     if (maxImage.warning) {
       console.warn(maxImage.warning);

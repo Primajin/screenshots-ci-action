@@ -21,11 +21,11 @@ inputs:
     default: false
   scrollBeforeCapture:
     required: false
-    description: "Only applies when fullPage is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content renders (default true). Pages taller than Chromium's capture limit are captured in tiles and stitched losslessly either way."
+    description: "Only applies when fullPage is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content is rendered. Default true; false, 0, no and off (any case) switch it off."
     default: true
   maxImageHeight:
     required: false
-    description: "Only applies when fullPage is true. Maximum height in output pixels (CSS pixels x device scale factor) of one image, at most 16000 (Chromium cannot capture more in one go). A taller page is captured as consecutive parts named <name>-part1, -part2, ... Defaults to 16000."
+    description: "Only applies when fullPage is true. Maximum height in OUTPUT pixels (CSS pixels x device scale factor) of one image, 100 to 16000, default and ceiling 16000. A taller page is captured as consecutive parts named <name>-part1, -part2, ... (nothing is stitched, cropped or downscaled); there is no way to get one image above 16000 pixels."
     default: '16000'
   type:
     required: false
