@@ -2,10 +2,12 @@
 // Zero-dependency assertions for the screenshots produced by the action.
 // Used by the scenario workflows (.github/workflows/_pass_*.yml). Exits 1 and
 // prints every violated expectation when something is off.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { parseArgs } from 'node:util';
+import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
 const PNG_SIGNATURE = Buffer.from([
@@ -81,6 +83,198 @@ export function parseImage(buffer) {
   }
 
   throw new Error('neither PNG nor JPEG magic bytes');
+}
+
+// ---- pixel checks (PNG only, decoded with node:zlib, no dependencies) ----
+
+const BAND_HEIGHT = 250;
+const FLAT_TOLERANCE = 8; // per channel, a band within this range is "empty"
+const CHANNELS_BY_COLOR_TYPE = { 0: 1, 2: 3, 4: 2, 6: 4 };
+
+function paeth(left, up, upLeft) {
+  const estimate = left + up - upLeft;
+  const distanceLeft = Math.abs(estimate - left);
+  const distanceUp = Math.abs(estimate - up);
+  const distanceUpLeft = Math.abs(estimate - upLeft);
+  if (distanceLeft <= distanceUp && distanceLeft <= distanceUpLeft) {
+    return left;
+  }
+
+  return distanceUp <= distanceUpLeft ? up : upLeft;
+}
+
+function unfilterRow(filter, line, previous, bytesPerPixel) {
+  const row = Buffer.alloc(line.length);
+  for (let i = 0; i < line.length; i++) {
+    const left = i >= bytesPerPixel ? row[i - bytesPerPixel] : 0;
+    const up = previous[i];
+    const upLeft = i >= bytesPerPixel ? previous[i - bytesPerPixel] : 0;
+    let predictor = 0;
+    if (filter === 1) {
+      predictor = left;
+    } else if (filter === 2) {
+      predictor = up;
+    } else if (filter === 3) {
+      predictor = (left + up) >> 1;
+    } else if (filter === 4) {
+      predictor = paeth(left, up, upLeft);
+    }
+
+    row[i] = (line[i] + predictor) & 0xff;
+  }
+
+  return row;
+}
+
+/**
+ * Decode an 8 bit, non-interlaced PNG row by row.
+ * @param {(y: number, row: Buffer, channels: number) => void} onRow
+ */
+export function decodePng(buffer, onRow) {
+  let offset = 8;
+  let header;
+  const data = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.toString('ascii', offset + 4, offset + 8);
+    const chunk = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      header = {
+        width: chunk.readUInt32BE(0),
+        height: chunk.readUInt32BE(4),
+        depth: chunk[8],
+        colorType: chunk[9],
+        interlace: chunk[12],
+      };
+    } else if (type === 'IDAT') {
+      data.push(chunk);
+    } else if (type === 'IEND') {
+      break;
+    }
+
+    offset += 12 + length;
+  }
+
+  const channels = header && CHANNELS_BY_COLOR_TYPE[header.colorType];
+  if (!channels || header.depth !== 8 || header.interlace !== 0) {
+    throw new Error('only 8 bit, non-interlaced PNG files can be analysed');
+  }
+
+  const raw = zlib.inflateSync(Buffer.concat(data));
+  const stride = header.width * channels;
+  let previous = Buffer.alloc(stride);
+  for (let y = 0; y < header.height; y++) {
+    const start = y * (stride + 1);
+    const row = unfilterRow(
+      raw[start],
+      raw.subarray(start + 1, start + 1 + stride),
+      previous,
+      channels
+    );
+    onRow(y, row, channels);
+    previous = row;
+  }
+}
+
+/**
+ * Count the bands of `bandHeight` rows whose sampled pixels are (nearly) one
+ * colour, and fingerprint the first band (to spot a repeated page top).
+ */
+export function analyzePng(buffer, bandHeight = BAND_HEIGHT) {
+  const topHash = crypto.createHash('sha1');
+  let low = [];
+  let high = [];
+  let bands = 0;
+  let flatBands = 0;
+  let height = 0;
+  const sampledChannels = (channels) => Math.min(3, channels);
+  decodePng(buffer, (y, row, channels) => {
+    if (y % bandHeight === 0) {
+      low = [255, 255, 255];
+      high = [0, 0, 0];
+    }
+
+    if (y < bandHeight) {
+      topHash.update(row);
+    }
+
+    if (y % 3 === 0) {
+      for (let x = 0; x < row.length; x += 3 * channels) {
+        for (let c = 0; c < sampledChannels(channels); c++) {
+          low[c] = Math.min(low[c], row[x + c]);
+          high[c] = Math.max(high[c], row[x + c]);
+        }
+      }
+    }
+
+    height = y + 1;
+    if (y % bandHeight === bandHeight - 1) {
+      bands++;
+      flatBands += high.every((value, c) => value - low[c] <= FLAT_TOLERANCE)
+        ? 1
+        : 0;
+    }
+  });
+  if (height % bandHeight !== 0) {
+    bands++;
+    flatBands += high.every((value, c) => value - low[c] <= FLAT_TOLERANCE)
+      ? 1
+      : 0;
+  }
+
+  return { bands, flatBands, topSignature: topHash.digest('hex') };
+}
+
+function checkPixels(directory, rows, options, errors) {
+  if (options.expectTotalHeight !== undefined) {
+    const total = rows.reduce((sum, row) => sum + row.height, 0);
+    if (total !== options.expectTotalHeight) {
+      errors.push(
+        `Expected the images to add up to ${options.expectTotalHeight} px in height, got ${total}`
+      );
+    }
+  }
+
+  if (options.maxEmptyFraction === undefined && !options.distinctParts) {
+    return;
+  }
+
+  const tops = new Map();
+  for (const row of rows) {
+    if (row.format !== 'png') {
+      errors.push(`${row.name}: pixel checks need a png`);
+      continue;
+    }
+
+    const analysis = analyzePng(
+      fs.readFileSync(path.join(directory, row.name))
+    );
+    const fraction = analysis.flatBands / analysis.bands;
+    if (
+      options.maxEmptyFraction !== undefined &&
+      fraction > options.maxEmptyFraction
+    ) {
+      errors.push(
+        `${row.name}: ${analysis.flatBands} of ${
+          analysis.bands
+        } bands of ${BAND_HEIGHT}px are blank (${(fraction * 100).toFixed(
+          1
+        )}%), more than ${(options.maxEmptyFraction * 100).toFixed(1)}%`
+      );
+    }
+
+    if (tops.has(analysis.topSignature)) {
+      if (options.distinctParts) {
+        errors.push(
+          `${row.name} starts with the same ${BAND_HEIGHT} rows as ${tops.get(
+            analysis.topSignature
+          )} (the top of the page repeats)`
+        );
+      }
+    } else {
+      tops.set(analysis.topSignature, row.name);
+    }
+  }
 }
 
 // Supports "*" and "?" only, which is all the scenarios need.
@@ -183,6 +377,9 @@ export function checkScreenshots(directory, options = {}) {
     options.noHash ? 'no-hash' : undefined,
     options.withHash ? 'with-hash' : undefined,
     options.expectFromName ? 'expect-from-name' : undefined,
+    options.maxEmptyFraction === undefined ? undefined : 'max-empty-fraction',
+    options.distinctParts ? 'distinct-parts' : undefined,
+    options.expectTotalHeight === undefined ? undefined : 'expect-total-height',
   ].filter(Boolean);
   if (exists && names.length === 0 && perFileOptions.length > 0) {
     errors.push(
@@ -215,6 +412,8 @@ export function checkScreenshots(directory, options = {}) {
   for (const row of rows) {
     checkRow(row, options, errors);
   }
+
+  checkPixels(directory, rows, options, errors);
 
   for (const expectation of options.expect || []) {
     const [glob, dimensions] = expectation.split('=');
@@ -275,6 +474,19 @@ const toNumber = (name, value) => {
   return number;
 };
 
+const toFraction = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const number = Number(value);
+  if (!(number >= 0 && number <= 1)) {
+    throw new Error('--max-empty-fraction must be between 0 and 1');
+  }
+
+  return number;
+};
+
 export function main(argv = process.argv.slice(2)) {
   const { values } = parseArgs({
     args: argv,
@@ -287,6 +499,9 @@ export function main(argv = process.argv.slice(2)) {
       'expect-from-name': { type: 'string' },
       'min-height': { type: 'string' },
       'max-height': { type: 'string' },
+      'expect-total-height': { type: 'string' },
+      'max-empty-fraction': { type: 'string' },
+      'distinct-parts': { type: 'boolean', default: false },
       type: { type: 'string' },
       'no-hash': { type: 'boolean', default: false },
       'with-hash': { type: 'boolean', default: false },
@@ -303,6 +518,12 @@ export function main(argv = process.argv.slice(2)) {
     expectFromName: values['expect-from-name'],
     minHeight: toNumber('min-height', values['min-height']),
     maxHeight: toNumber('max-height', values['max-height']),
+    expectTotalHeight: toNumber(
+      'expect-total-height',
+      values['expect-total-height']
+    ),
+    maxEmptyFraction: toFraction(values['max-empty-fraction']),
+    distinctParts: values['distinct-parts'],
     type: values.type,
     noHash: values['no-hash'],
     withHash: values['with-hash'],
