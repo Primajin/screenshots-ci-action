@@ -22,7 +22,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
-| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment; a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`. See below |
+| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment; a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
 | `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
 | `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
@@ -73,9 +73,13 @@ writes a table (file, format, dimensions, size) to the job summary.
 
 `pass-release-pr-comment` is the only scenario that passes `release-id`, so the
 action's own upload path (`uploadReleaseAsset` + PR comment) is exercised for
-real. It runs four calls on the PR, with the comment tags `screenshots` (twice,
-the second call must edit the first comment), `tall` and `links`, and asserts
-after each that every tag still has exactly one comment. The release is one
+real. It runs five calls on the PR, with the comment tags `screenshots` (twice,
+the second call must edit the first comment), `tall`, `links` and `silent`
+(`comment: false`: the screenshots are uploaded, the comments of the PR stay
+byte for byte the same), and asserts after each that every tag still has
+exactly one comment. The default comment must also carry the real sizes of the
+images, `width="600" height="1022"` for the iPhone 13 and `width="600" height="419"`
+for the iPad Pro 11 landscape. The release is one
 long-lived **pre-release** (never marked latest, tag `ci-screenshots`, no `v`
 prefix, so release-please and the major tag job ignore it). Its numeric id
 (415059795) is the single `CI_RELEASE_ID` line at the top of
@@ -88,8 +92,10 @@ after the call started, and checks that an image URL is publicly downloadable
 carry the run's short commit sha (in the image URLs) and the head commit (in the
 footer). Because comments are edited in place, the comments of the tags above
 stay on the PR for its whole life, instead of one new comment per push. The
-job queues per pull request (`concurrency`, no cancelling), because two runs
-with the same tag in parallel could each create a comment. It is skipped for
+job queues per pull request (`concurrency` with `cancel-in-progress: false`:
+one run executes and one waits; a newer run still replaces an older one that is
+waiting, which GitHub then shows as cancelled), because two runs with the same tag
+in parallel could each create a comment. It is skipped for
 forks and Dependabot (read-only token) and when a PR is closed.
 
 ### Pruning

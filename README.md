@@ -60,6 +60,7 @@ Telegram chat.
 | `comment-open`(string) | optional(`none`) | Layout `details` only: which sections start open. `none` (all closed, so the page stays short and does not jump while images load), `first` or `all`. |
 | `comment-group-by`(string) | optional(`capture`) | `capture`: one group per desktop size or device, with its parts inside. `all`: a single group with everything. `none`: one group per image. |
 | `comment-image-width`(number) | optional(`600`) | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. `0` leaves both attributes out. |
+| `comment-image-height`(string) | optional(`auto-ratio`) | `auto-ratio`: put `height` (from the aspect ratio) next to `width` on every image. `none`: put only the `width`. Use `none` if images look squashed in a narrow window, see [PR comments](#pr-comments). |
 | `comment-mode`(string) | optional(`update`) | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a PR keeps one comment that follows every push. `new`: always post a new comment. |
 | `comment-tag`(string) | optional(`screenshots`) | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
 | `comment-headline`(string) | optional(`Screenshots`) | Headline of the comment. |
@@ -150,7 +151,18 @@ number of parts and the file size:
 Every image carries `width` and `height`, scaled down to at most
 `comment-image-width` CSS pixels (default 600) with the aspect ratio kept, so the
 browser reserves the space before the image arrives. The parts of one capture
-sit directly next to each other and read as one continuous page.
+sit directly next to each other and read as one continuous page (parts that
+are shown at 400 pixels or less would sit side by side, so a line break is put
+between them).
+
+**Squashed images in narrow windows.** GitHub's CSS caps an image at the width of
+the comment column. In a very narrow window (a phone, a split screen) an image
+that has both `width` and `height` can then be drawn squashed, because the height
+stays fixed while the width shrinks. If you see that, set
+`comment-image-height: none`: only the `width` is written, the images keep their
+proportions, and the browser can only reserve the height after the image has
+loaded, so the page may jump a little again. The default keeps both attributes,
+because a page that does not jump is what the accordion is for.
 
 ```yaml
 # the defaults: closed accordions, one accordion per capture
@@ -182,11 +194,15 @@ sit directly next to each other and read as one continuous page.
 **Update in place.** The first line of the comment is a hidden marker,
 `<!-- screenshots-ci-action:<comment-tag> -->`. On the next run the action lists the
 comments of the pull request (all pages), finds the one that starts with that
-marker and was written by `github-actions[bot]` (or the owner of a personal
-access token), and edits it, so a pull request keeps one screenshot comment that
-follows every push. Nothing is found: a new comment is created. A comment that
-cannot be edited any more (deleted in the meantime): a new one is created.
-`comment-mode: new` always posts a new comment, as v3 did.
+marker and was written by `github-actions[bot]`, by the owner of a personal
+access token, or by any other bot (the login of a GitHub App cannot be looked up
+with its installation token, so its comments are recognised by being a bot's and
+carrying the marker), and edits the newest such comment. That way a pull request
+keeps one screenshot comment that follows every push. Nothing is found: a new
+comment is created. A comment that was deleted in the meantime (404): a new one
+is created. Any other failure of the edit (no permission, rate limit, server
+error) is logged and nothing is posted, instead of adding a duplicate on every
+run. `comment-mode: new` always posts a new comment, as v3 did.
 
 **Several calls, several comments.** Every call of the action on one pull
 request that should keep its own comment needs its own `comment-tag` (and
@@ -214,11 +230,25 @@ group per pull request.
 
 **Not posting.** `comment: false` still uploads the screenshots to the release
 (when `release-id` is set) and logs their URLs, but posts nothing; the files in
-`screenshots/` can go to a workflow artifact as before. A comment that would
-exceed GitHub's 65,536 character limit is posted with the `links` layout and a
-warning. An unknown value for an enum input (`comment-layout`, `comment-open`,
-`comment-group-by`, `comment-mode`) or an invalid `comment-image-width` is
-logged as a warning and the default is used.
+`screenshots/` can go to a workflow artifact as before. The upload then also
+happens outside pull request events (for example on `push`), which it never did
+before, because without a comment there is no pull request to wait for. With a
+comment but without `release-id` nothing is uploaded or posted, and the log says
+so.
+
+**Footer.** The footer names the commit under review, which is the head commit
+of the pull request. The file names of the screenshots end with the short
+`GITHUB_SHA` instead, which on `pull_request` events is the merge commit of the
+pull request, so the two shas differ.
+
+**Limits and mistakes.** A comment that would exceed GitHub's 65,536 character
+limit is posted with the `links` layout and a warning; if even the links are too
+long the list is cut with "…and N more". An unknown value for an enum input
+(`comment-layout`, `comment-open`, `comment-group-by`, `comment-image-height`,
+`comment-mode`), for a switch (`comment`, `comment-footer`: use `true` or `false`)
+or an invalid `comment-image-width` is logged as a warning and the default is
+used. Characters of `comment-tag` other than letters, digits (of any language),
+space, dot, dash and underscore are replaced with `-`, with a warning.
 
 ## Output screenshots
 There are **3** different way to output files
@@ -534,8 +564,10 @@ can change in an existing workflow:
 5. **The PR comment is updated in place** (behaviour change). v3 posted a new
    comment with plain `<img>` tags for every push. v4 keeps one comment per
    `comment-tag` and edits it on the next push, with a closed `<details>` section
-   per capture. To get the v3 comment back use `comment-mode: new`,
-   `comment-layout: inline` and `comment-image-width: 0`; see
+   per capture. To get close to the v3 comment use `comment-mode: new`,
+   `comment-layout: inline`, `comment-image-width: 0` and `comment-footer: false`
+   (the headline and the hidden marker line remain, and the headings show a
+   readable name instead of the asset name); see
    [PR comments](#pr-comments). Several calls of the action on one pull request
    now need different `comment-tag`s, or they overwrite each other's comment.
 
