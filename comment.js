@@ -97,15 +97,23 @@ function displaySize({width, height}, imageWidth) {
 	return {width: shown, height: Math.max(1, Math.round((height * shown) / width))};
 }
 
-// Width and height, or only the width with imageHeight 'none' (GitHub's CSS
-// caps an image at the column width, which squashes one that has both)
+// GitHub rewrites an image that has a height above 2000 (checked with its
+// markdown renderer): the height is cut to 2000 and the width scaled down by
+// the same factor, so a 1668 x 16000 part becomes a 209 x 2000 strip. Taller
+// images therefore get only the width: GitHub leaves it alone, and the browser
+// works out the height after loading.
+const GITHUB_MAX_IMAGE_HEIGHT = 2000;
+
+// Width and height, or only the width with imageHeight 'none' or when the
+// height would be above what GitHub keeps. (GitHub also caps an image at the
+// width of the comment column, which squashes one that has a fixed height.)
 function sizeAttributes(entry, {imageWidth, imageHeight}) {
 	const shown = displaySize(entry, imageWidth);
 	if (!shown) {
 		return '';
 	}
 
-	return imageHeight === 'none'
+	return imageHeight === 'none' || shown.height > GITHUB_MAX_IMAGE_HEIGHT
 		? ` width="${shown.width}"`
 		: ` width="${shown.width}" height="${shown.height}"`;
 }
@@ -231,21 +239,6 @@ function buildGroups(captures, groupBy) {
 	});
 }
 
-// Images up to this display width would sit two side by side in a comment
-// (about 830 CSS pixels wide), which breaks the read-from-top-to-bottom order of
-// the parts of one capture, so they get a line break between them
-const SIDE_BY_SIDE_MAX = 400;
-
-function isNarrow(capture, imageWidth) {
-	const widths = capture.entries.map(entry => entry.width).filter(Boolean);
-	if (capture.entries.length < 2 || widths.length === 0) {
-		return false;
-	}
-
-	const widest = Math.max(...widths);
-	return (imageWidth ? Math.min(widest, imageWidth) : widest) <= SIDE_BY_SIDE_MAX;
-}
-
 // Links and images of one group (details and inline layout)
 function renderBody(group, settings) {
 	const sections = group.captures.map(capture => {
@@ -258,11 +251,12 @@ function renderBody(group, settings) {
 			: '';
 		const links = capture.entries.map(entry => {
 			const suffix = partSuffix(capture, entry);
-			return `- ${suffix ? `${suffix}: ` : ''}${entry.url}`;
+			return `- [${suffix ? `${escapeHtml(suffix)}: ` : ''}open full size](${entry.url})`;
 		});
 		const images = capture.entries
 			.map(entry => imageTag(capture, entry, settings))
-			.join(isNarrow(capture, settings.imageWidth) ? '<br>' : '');
+			// Parts always stack: a line break between them, no gap otherwise
+			.join('<br>');
 		return `${heading}${links.join('\n')}\n\n${images}\n\n`;
 	});
 	return sections.join('');
@@ -426,6 +420,7 @@ function shortenLinks(uploaded, allFiles, options, limit) {
 
 export {
 	DEFAULT_OPTIONS,
+	GITHUB_MAX_IMAGE_HEIGHT,
 	MAX_COMMENT_LENGTH,
 	buildCommentBody,
 	captureLabel,
