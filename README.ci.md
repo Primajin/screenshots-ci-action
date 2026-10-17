@@ -56,23 +56,22 @@ npx playwright install chromium   # add --with-deps on Linux if system libraries
 ```
 
 The inputs are environment variables named `INPUT_<NAME>` (upper case, the
-dashes stay), which is how GitHub Actions hands them over. The environment
-variable `GITHUB_REPOSITORY` must be set as well, because the action reads the
-repository from it after the capture (the value is not used without a
-`release-id`). `env` can set names that contain a dash:
+dashes stay), which is how GitHub Actions hands them over. `env` can set names
+that contain a dash. No other variable is needed:
 
 ```shell
-env GITHUB_REPOSITORY=local/test \
-  INPUT_URL=https://example.com \
+env INPUT_URL=https://example.com \
   'INPUT_DEVICES=iPhone 13,iPad Pro 11 landscape' \
   INPUT_NO-DESKTOP=true \
   INPUT_FULL-PAGE=true \
   node index.js
 ```
 
-The screenshots land in `./screenshots/` (ignored by Git). Without
-`GITHUB_SHA` the file names end with a millisecond timestamp instead of the
-short commit hash. To try the fixture site of this repository, serve it the way
+The screenshots land in `screenshots/` of the **current directory** (created if
+it does not exist; ignored by Git in this repository). Without `GITHUB_SHA` the
+file names end with a millisecond timestamp instead of the short commit hash.
+Without a `release-id` nothing is uploaded, and without `GITHUB_REPOSITORY` the
+GitHub related steps are skipped. To try the fixture site of this repository, serve it the way
 the `serve-fixtures` action does and capture
 `http://localhost:8080/?mode=tall`:
 
