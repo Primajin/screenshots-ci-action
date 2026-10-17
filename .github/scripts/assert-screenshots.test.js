@@ -2,6 +2,7 @@ import {Buffer} from 'node:buffer';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import {
 	afterEach,
 	beforeEach,
@@ -11,7 +12,9 @@ import {
 	vi,
 } from 'vitest';
 import {
+	analyzePng,
 	checkScreenshots,
+	decodePng,
 	detectFormat,
 	globToRegExp,
 	main,
@@ -371,5 +374,251 @@ describe('main (CLI)', () => {
 
 	it('rejects invalid numbers', () => {
 		expect(() => run('--min-height', 'abc')).toThrow('non-negative integer');
+	});
+});
+
+// ---- pixel checks ----
+
+const chunk = (type, data) => {
+	const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+	const length = Buffer.alloc(4);
+	length.writeUInt32BE(data.length);
+	const crc = Buffer.alloc(4);
+	crc.writeUInt32BE(zlib.crc32(body));
+	return Buffer.concat([length, body, crc]);
+};
+
+// PNG filter types 0 (none), 1 (sub), 2 (up), 3 (average), 4 (paeth).
+const PREDICTORS = [
+	() => 0,
+	left => left,
+	(left, up) => up,
+	(left, up) => Math.floor((left + up) / 2),
+	(left, up, upLeft) => {
+		const estimate = left + up - upLeft;
+		const distances = [left, up, upLeft].map(value => Math.abs(estimate - value));
+		return [left, up, upLeft][distances.indexOf(Math.min(...distances))];
+	},
+];
+
+const encodeRow = (width, channels, y, pixel) => {
+	const row = Buffer.alloc(width * channels);
+	for (let x = 0; x < width; x++) {
+		const [red, green, blue] = pixel(x, y);
+		row.set(channels === 4 ? [red, green, blue, 255] : [red, green, blue], x * channels);
+	}
+
+	return row;
+};
+
+// Encodes an RGB or RGBA PNG; pixel(x, y) returns [r, g, b]; filterFor(y) picks
+// the PNG filter type of a row.
+const encodePng = (width, height, pixel, {alpha = false, filterFor = () => 0} = {}) => {
+	const channels = alpha ? 4 : 3;
+	const lines = [];
+	let previous = Buffer.alloc(width * channels);
+	for (let y = 0; y < height; y++) {
+		const row = encodeRow(width, channels, y, pixel);
+		const filter = filterFor(y);
+		const filtered = Buffer.alloc(row.length + 1);
+		filtered[0] = filter;
+		for (const [i, value] of row.entries()) {
+			const left = i >= channels ? row[i - channels] : 0;
+			const upLeft = i >= channels ? previous[i - channels] : 0;
+			filtered[i + 1] = (value - PREDICTORS[filter](left, previous[i], upLeft) + 256) % 256;
+		}
+
+		lines.push(filtered);
+		previous = row;
+	}
+
+	const header = Buffer.alloc(13);
+	header.writeUInt32BE(width, 0);
+	header.writeUInt32BE(height, 4);
+	header[8] = 8;
+	header[9] = alpha ? 6 : 2;
+	const compressed = zlib.deflateSync(Buffer.concat(lines));
+	return Buffer.concat([
+		Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+		chunk('IHDR', header),
+		chunk('IDAT', compressed),
+		chunk('IEND', Buffer.alloc(0)),
+	]);
+};
+
+// A busy picture: diagonal stripes whose colour depends on the 500px section.
+const busy = (offset = 0) => (x, y) => {
+	const stripe = Math.floor((x + y + offset) / 16) % 2 === 1 ? 40 : 200;
+	return [stripe, (Math.floor((y + offset) / 500) * 20) % 256, 255 - stripe];
+};
+
+const blank = () => [248, 250, 252];
+
+describe('decodePng', () => {
+	it('decodes every filter type back to the original pixels', () => {
+		for (const alpha of [false, true]) {
+			const image = encodePng(37, 11, busy(), {
+				alpha,
+				filterFor: y => y % 5,
+			});
+			const rows = [];
+			decodePng(image, (y, row, channels) => {
+				rows.push(Buffer.from(row));
+				expect(channels).toBe(alpha ? 4 : 3);
+			});
+			expect(rows).toHaveLength(11);
+			for (let y = 0; y < 11; y++) {
+				const channels = alpha ? 4 : 3;
+				const [r, g, b] = busy()(5, y);
+				const start = 5 * channels;
+				expect([...rows[y].subarray(start, start + 3)]).toEqual([
+					r,
+					g,
+					b,
+				]);
+			}
+		}
+	});
+
+	it('rejects unsupported PNGs', () => {
+		const image = encodePng(2, 2, blank);
+		image[24] = 16; // Bit depth in IHDR
+		expect(() => decodePng(image, () => {})).toThrow('8 bit');
+	});
+});
+
+describe('analyzePng', () => {
+	it('counts blank bands', () => {
+		const image = encodePng(60, 1000, (x, y) =>
+			y < 500 ? busy()(x, y) : blank(),
+		);
+		expect(analyzePng(image)).toMatchObject({bands: 4, flatBands: 2});
+	});
+
+	it('counts a partial last band and finds none in a busy image', () => {
+		const image = encodePng(60, 600, busy());
+		expect(analyzePng(image)).toMatchObject({bands: 3, flatBands: 0});
+	});
+
+	it('fingerprints the first band', () => {
+		const a = analyzePng(encodePng(30, 300, busy(0)));
+		const b = analyzePng(encodePng(30, 300, busy(0)));
+		const c = analyzePng(encodePng(30, 300, busy(8)));
+		expect(a.topSignature).toBe(b.topSignature);
+		expect(a.topSignature).not.toBe(c.topSignature);
+	});
+});
+
+describe('pixel assertions', () => {
+	let directory;
+
+	beforeEach(() => {
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-pixels-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(directory, {recursive: true, force: true});
+	});
+
+	const write = (name, buffer) =>
+		fs.writeFileSync(path.join(directory, name), buffer);
+
+	it('passes a fully rendered capture', () => {
+		write('p-part1.png', encodePng(40, 750, busy(0)));
+		write('p-part2.png', encodePng(40, 500, busy(750)));
+		const {errors} = checkScreenshots(directory, {
+			expectTotalHeight: 1250,
+			maxEmptyFraction: 0.02,
+			distinctParts: true,
+		});
+		expect(errors).toEqual([]);
+	});
+
+	it('fails a capture with a big blank region (control)', () => {
+		write(
+			'p-part1.png',
+			encodePng(40, 2000, (x, y) => (y < 500 ? busy()(x, y) : blank())),
+		);
+		const {errors} = checkScreenshots(directory, {maxEmptyFraction: 0.02});
+		expect(errors).toEqual([
+			'p-part1.png: 6 of 8 bands of 250px are blank (75.0%), more than 2.0%',
+		]);
+	});
+
+	it('tolerates a few blank bands up to the given fraction', () => {
+		write(
+			'p.png',
+			encodePng(40, 2500, (x, y) => (y < 250 ? blank() : busy()(x, y))),
+		);
+		expect(
+			checkScreenshots(directory, {maxEmptyFraction: 0.1}).errors,
+		).toEqual([]);
+		expect(
+			checkScreenshots(directory, {maxEmptyFraction: 0.05}).errors,
+		).toHaveLength(1);
+	});
+
+	it('fails when a part repeats the top of the page', () => {
+		write('p-part1.png', encodePng(40, 600, busy(0)));
+		write('p-part2.png', encodePng(40, 600, busy(0)));
+		expect(checkScreenshots(directory, {distinctParts: true}).errors).toEqual(
+			[
+				'p-part2.png starts with the same 250 rows as p-part1.png (the top of the page repeats)',
+			],
+		);
+	});
+
+	it('checks the total height', () => {
+		write('a.png', encodePng(10, 300, busy()));
+		expect(
+			checkScreenshots(directory, {expectTotalHeight: 301}).errors,
+		).toEqual(['Expected the images to add up to 301 px in height, got 300']);
+	});
+
+	it('needs a png for pixel checks', () => {
+		write('a.jpeg', jpeg(10, 10));
+		expect(
+			checkScreenshots(directory, {maxEmptyFraction: 0.1}).errors,
+		).toEqual(['a.jpeg: pixel checks need a png']);
+	});
+
+	it('fails the pixel options on an empty selection', () => {
+		expect(
+			checkScreenshots(directory, {match: 'x*', distinctParts: true})
+				.errors[0],
+		).toContain('distinct-parts');
+	});
+});
+
+describe('main (pixel flags)', () => {
+	it('wires --expect-total-height, --max-empty-fraction and --distinct-parts', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-main-'));
+		fs.writeFileSync(
+			path.join(directory, 'p-part1.png'),
+			encodePng(20, 500, busy(0)),
+		);
+		fs.writeFileSync(
+			path.join(directory, 'p-part2.png'),
+			encodePng(20, 500, blank),
+		);
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			expect(main(['--dir', directory, '--expect-total-height', '1000'])).toBe(
+				0,
+			);
+			expect(main(['--dir', directory, '--expect-total-height', '999'])).toBe(
+				1,
+			);
+			expect(main(['--dir', directory, '--max-empty-fraction', '0'])).toBe(1);
+			expect(main(['--dir', directory, '--max-empty-fraction', '1'])).toBe(0);
+			expect(main(['--dir', directory, '--distinct-parts'])).toBe(0);
+			expect(() =>
+				main(['--dir', directory, '--max-empty-fraction', '2']),
+			).toThrow('between 0 and 1');
+		} finally {
+			vi.restoreAllMocks();
+			fs.rmSync(directory, {recursive: true, force: true});
+		}
 	});
 });

@@ -87,6 +87,37 @@
     }, LATE_DELAY_MS);
   }
 
+  function startTallMode() {
+    var count = 40;
+    var root = $('#tall-root');
+    var observer = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('on');
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1 }
+    );
+    for (var i = 0; i < count; i++) {
+      var section = document.createElement('section');
+      section.className = 'reveal';
+      section.style.setProperty('--hue', String((i * 37) % 360));
+      var label = document.createElement('div');
+      label.className = 'label';
+      section.appendChild(label);
+      root.appendChild(section);
+      observer.observe(section);
+    }
+    Array.prototype.forEach.call(root.children, function (section, index) {
+      section.firstChild.textContent =
+        'section ' + (index + 1) + ' / ' + count + ' \u00b7 y = ' + section.offsetTop + ' px';
+    });
+    refresh();
+  }
+
   function printTimings() {
     var panel = $('#timings');
     if (panel) {
@@ -133,6 +164,8 @@
 
   if (mode === 'late') {
     startLateMode();
+  } else if (mode === 'tall') {
+    startTallMode();
   } else if (mode === 'wait-until') {
     printTimings();
   }
