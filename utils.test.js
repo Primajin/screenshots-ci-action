@@ -118,7 +118,7 @@ describe('formatInvalidDevicesError', () => {
 		]);
 		expect(message).toContain('- "iPad Pro" (did you mean: "iPad Pro 11"?)');
 		expect(message).toContain('- "nope"');
-		expect(message).toContain('deviceDescriptorsSource.json');
+		expect(message).toContain('packages/isomorphic/deviceDescriptorsSource.json');
 	});
 });
 
