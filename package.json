@@ -24,7 +24,11 @@
     "action.yml",
     "capture.js",
     "comment.js",
+    "comment-options.js",
+    "image-size.js",
+    "pr-comment.js",
     "pre-script.js",
+    "screenshots-dir.js",
     "telegram.js",
     "utils.js"
   ],

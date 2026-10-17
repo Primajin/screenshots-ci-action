@@ -16,10 +16,18 @@ jobs:
   pass:
     runs-on: ubuntu-latest
     name: "Should pass - screenshots are uploaded to the release and posted to the PR"
+    # Calls with the same comment-tag must not run in parallel (two pushes in a
+    # row would both see no comment and create one each), so runs for one PR queue up.
+    concurrency:
+      group: release-pr-comment-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
+      # The footer of the comment names the commit under review (the PR head),
+      # the image file names carry GITHUB_SHA (the merge commit of the PR).
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -27,7 +35,10 @@ jobs:
         run: echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
-      - name: Take screenshots and upload them to the release
+
+      # 1. Default comment options: a closed accordion per capture, sized images,
+      #    one comment that later calls edit in place
+      - name: Take screenshots and upload them to the release (default comment options)
         uses: ./
         with:
           url: http://localhost:8080/
@@ -38,42 +49,58 @@ jobs:
       - name: Assert the local screenshots
         run: |
           node .github/scripts/assert-screenshots.mjs --title "Release upload" --archive-to artifacts/release-capture --expect-count 9 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
-      - name: Assert the release assets and the PR comment
+      - name: Assert the release assets
+        run: bash .github/scripts/assert-release-assets.sh
+      - name: Assert the PR comment - closed accordions, sized images, one comment
         run: |
           set -euo pipefail
-          files=$(ls screenshots | wc -l)
-          assets=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.created_at >= \"$SINCE\") | .name")
-          echo "$assets"
-          [ "$(echo "$assets" | grep -c .)" -ge "$files" ] || { echo "::error::Expected at least $files new release assets"; exit 1; }
-          for file in screenshots/*; do
-            echo "$assets" | grep -q -- "$(basename "$file")$" || { echo "::error::No release asset for $file"; exit 1; }
-          done
-          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          files=$(find screenshots -maxdepth 1 -type f | wc -l)
           sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
-          # A capture split into parts is posted as one comment with "part N of M" lines.
-          expect_parts=$(printenv EXPECT_PARTS || true)
-          partfilter='(.body | contains("part 1 of") | not)'
-          if [ -n "$expect_parts" ]; then partfilter='(.body | contains("part 1 of"))'; fi
-          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")) and $partfilter)] | .[0].body // empty")
-          [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
-          images=$(echo "$comment" | grep -o '<img src=' | wc -l)
-          echo "PR comment embeds $images image(s)"
-          [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
-          if [ -n "$expect_parts" ]; then
-            echo "$comment" | grep -q "part $expect_parts of $expect_parts" || { echo "::error::The comment does not list part $expect_parts of $expect_parts"; exit 1; }
+          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (defaults)" --tag screenshots --expect-comments 1 \
+            --images "$files" --details-closed --sized-images \
+            --contains="/releases/download/$tag/" --contains="-$sha7." --contains="Commit ${HEAD_SHA:0:7}" \
+            --contains='alt="iPhone 13" width="600" height="1022">' --contains='alt="iPad Pro 11 landscape" width="600" height="419">' \
+            --not-contains='<details open' \
+            --write-body "$RUNNER_TEMP/comment-first.md" --write-id "$RUNNER_TEMP/comment-id"
+          echo "COMMENT_ID=$(cat "$RUNNER_TEMP/comment-id")" >> "$GITHUB_ENV"
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-first.md"
+          # GitHub rewrites <img> tags, so check the rendered HTML too
+          gh api "repos/$GH_REPO/issues/comments/$(cat "$RUNNER_TEMP/comment-id")" -H "Accept: application/vnd.github.full+json" --jq .body_html > "$RUNNER_TEMP/comment-first.html"
+          node .github/scripts/assert-rendered-html.mjs --html "$RUNNER_TEMP/comment-first.html" --title "Rendered comment (defaults)" --images "$files" --min-image-width 500
+
+      # 2. The same call again: the comment is edited in place, not duplicated
+      - name: Take the screenshots again with the same comment tag
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13,iPad Pro 11 landscape
+          release-id: ${{ env.CI_RELEASE_ID }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the comment was updated in place (still one comment, same id, new images)
+        run: |
+          set -euo pipefail
+          files=$(find screenshots -maxdepth 1 -type f | wc -l)
+          sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (second call, same tag)" --tag screenshots --expect-comments 1 --expect-id "$COMMENT_ID" \
+            --images "$files" --details-closed --sized-images --contains="-$sha7." \
+            --contains='alt="iPhone 13" width="600" height="1022">' --contains='alt="iPad Pro 11 landscape" width="600" height="419">' \
+            --write-body "$RUNNER_TEMP/comment-second.md"
+          # The upload names carry a new timestamp, so an edit changes the body
+          if cmp -s "$RUNNER_TEMP/comment-first.md" "$RUNNER_TEMP/comment-second.md"; then
+            echo "::error::The comment body did not change, it was not edited"
+            exit 1
           fi
-          url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
-          ctype=$(curl -sfL -o /dev/null -r 0-0 -w '%{content_type}' "$url") || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
-          case "$ctype" in
-            image/*|application/octet-stream) echo "Image URL resolves ($ctype): $url" ;;
-            *) echo "::error::Unexpected content type $ctype for $url"; exit 1 ;;
-          esac
           {
-            echo "### PR comment and release"
-            echo ""
-            echo "- Release \`$tag\` (id $CI_RELEASE_ID) received at least $files new assets"
-            echo "- The PR comment embeds $images images"
+            echo "- Second call with the same tag edited comment $COMMENT_ID instead of posting another"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # 3. A tall page, captured in parts, with its own tag so it keeps its own comment
       - name: Remember when the tall page capture started
         run: |
           rm -rf screenshots
@@ -87,49 +114,100 @@ jobs:
           full-page: true
           type: jpeg
           release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: tall
+          comment-headline: Tall page
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Assert the local parts
         run: |
           node .github/scripts/assert-screenshots.mjs --title "Release upload, tall page" --archive-to artifacts/release-tall --expect-count 3 --max-height 16000 --expect-total-height 40552 --type jpeg
-      - name: Assert the release assets and the PR comment with parts
-        env:
-          EXPECT_PARTS: '3'
+      - name: Assert the release assets
+        run: bash .github/scripts/assert-release-assets.sh
+      - name: Assert the PR comment with parts, and that the first comment is untouched
         run: |
           set -euo pipefail
-          files=$(ls screenshots | wc -l)
-          assets=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.created_at >= \"$SINCE\") | .name")
-          echo "$assets"
-          [ "$(echo "$assets" | grep -c .)" -ge "$files" ] || { echo "::error::Expected at least $files new release assets"; exit 1; }
-          for file in screenshots/*; do
-            echo "$assets" | grep -q -- "$(basename "$file")$" || { echo "::error::No release asset for $file"; exit 1; }
-          done
-          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          files=$(find screenshots -maxdepth 1 -type f | wc -l)
           sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
-          # A capture split into parts is posted as one comment with "part N of M" lines.
-          expect_parts=$(printenv EXPECT_PARTS || true)
-          partfilter='(.body | contains("part 1 of") | not)'
-          if [ -n "$expect_parts" ]; then partfilter='(.body | contains("part 1 of"))'; fi
-          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")) and $partfilter)] | .[0].body // empty")
-          [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
-          images=$(echo "$comment" | grep -o '<img src=' | wc -l)
-          echo "PR comment embeds $images image(s)"
-          [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
-          if [ -n "$expect_parts" ]; then
-            echo "$comment" | grep -q "part $expect_parts of $expect_parts" || { echo "::error::The comment does not list part $expect_parts of $expect_parts"; exit 1; }
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (tall page)" --tag tall --expect-comments 1 --not-id "$COMMENT_ID" \
+            --images "$files" --details-closed \
+            --contains='part 3 of 3' --contains='3 parts' --contains='### Tall page' --contains="-$sha7." \
+            --contains='alt="iPad Pro 11, part 1 of 3" width="600">' --contains='alt="iPad Pro 11, part 3 of 3" width="600">' \
+            --not-contains='height="2000"' \
+            --write-body "$RUNNER_TEMP/comment-tall.md" --write-id "$RUNNER_TEMP/comment-tall-id"
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-tall.md"
+          # The tall parts must reach the page at the full width and one below the other, not as the
+          # narrow strips GitHub makes of an image with a height above 2000
+          gh api "repos/$GH_REPO/issues/comments/$(cat "$RUNNER_TEMP/comment-tall-id")" -H "Accept: application/vnd.github.full+json" --jq .body_html > "$RUNNER_TEMP/comment-tall.html"
+          node .github/scripts/assert-rendered-html.mjs --html "$RUNNER_TEMP/comment-tall.html" --title "Rendered comment (tall page)" --images "$files" --min-image-width 500 --no-height-attr
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (defaults, untouched by the tall call)" --tag screenshots --expect-comments 1 --expect-id "$COMMENT_ID"
+
+      # 4. Links only: a separate comment without embedded images
+      - name: Remember when the links capture started
+        run: |
+          rm -rf screenshots
+          echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Take a screenshot and post only links
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          devices: iPhone 13
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-layout: links
+          comment-tag: links
+          comment-headline: Links only
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the release assets
+        run: bash .github/scripts/assert-release-assets.sh
+      - name: Assert the separate links comment, with no images
+        run: |
+          set -euo pipefail
+          sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
+          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (links)" --tag links --expect-comments 1 --not-id "$COMMENT_ID" \
+            --no-images --contains='### Links only' --contains="](https://github.com/$GH_REPO/releases/download/$tag/" --contains="-$sha7." \
+            --not-contains='<details' \
+            --write-body "$RUNNER_TEMP/comment-links.md"
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-links.md"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (defaults, untouched by the links call)" --tag screenshots --expect-comments 1 --expect-id "$COMMENT_ID" --details-closed
+      # 5. comment: false still uploads, but posts and edits nothing
+      - name: Remember the comments and when the silent capture started
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments-before.jsonl"
+          rm -rf screenshots
+          echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Take a screenshot with comment false
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          devices: iPhone 13
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment: false
+          comment-tag: silent
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the release assets
+        run: bash .github/scripts/assert-release-assets.sh
+      - name: Assert that nothing was posted or edited
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments-after.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments-after.jsonl" \
+            --title "PR comment (silent)" --tag silent --expect-comments 0
+          if ! cmp -s "$RUNNER_TEMP/comments-before.jsonl" "$RUNNER_TEMP/comments-after.jsonl"; then
+            echo "::error::comment: false changed the comments of the pull request"
+            exit 1
           fi
-          url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
-          ctype=$(curl -sfL -o /dev/null -r 0-0 -w '%{content_type}' "$url") || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
-          case "$ctype" in
-            image/*|application/octet-stream) echo "Image URL resolves ($ctype): $url" ;;
-            *) echo "::error::Unexpected content type $ctype for $url"; exit 1 ;;
-          esac
-          {
-            echo "### PR comment and release"
-            echo ""
-            echo "- Release \`$tag\` (id $CI_RELEASE_ID) received at least $files new assets"
-            echo "- The PR comment embeds $images images"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "- comment: false uploaded the screenshots and left the $(wc -l < "$RUNNER_TEMP/comments-after.jsonl") comments of the pull request untouched" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7

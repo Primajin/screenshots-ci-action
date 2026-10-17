@@ -83,3 +83,10 @@ jobs:
 ```
 
 ![PR_comment_03.jpg](./asset/PR_comment_03.jpg)  
+
+## 4. Customise the comment
+
+By default the comment has one collapsed `<details>` section per capture and is
+updated in place on every push (instead of a new comment per push). Layout,
+open state, grouping, image width, headline, tag and footer are configurable with
+the `comment-*` inputs, see [PR comments](/README.md#pr-comments) in the README.

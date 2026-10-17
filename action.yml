@@ -64,6 +64,46 @@ inputs:
     required: false
     description: "GitHub Release id. Required to upload the screenshots to a PR comment (see README.PR.md)."
     default: ''
+  comment:
+    required: false
+    description: "Post the uploaded screenshots to the pull request comment (needs release-id). false, 0, no and off switch it off: the screenshots are still uploaded to the release, nothing is posted. Default true."
+    default: true
+  comment-layout:
+    required: false
+    description: "How the comment shows the screenshots: details (a collapsible section per group, default), inline (a heading per group with the images directly under it) or links (only a list of links, no embedded images). See README, PR comments."
+    default: 'details'
+  comment-open:
+    required: false
+    description: "Layout details only: which sections start open. none (default, all closed, so the page does not jump while images load), first or all."
+    default: 'none'
+  comment-group-by:
+    required: false
+    description: "How the captures are grouped: capture (one section per desktop size or device, with its parts inside, default), all (a single section with everything) or none (one section per image)."
+    default: 'capture'
+  comment-image-width:
+    required: false
+    description: "Widest display width in CSS pixels of an image in the comment. Every image gets width and height attributes from its real size (aspect ratio kept, never enlarged), so the page does not reflow while images load. 0 leaves the attributes out. Default 600."
+    default: '600'
+  comment-image-height:
+    required: false
+    description: "auto-ratio (default) puts height next to width on every image, so the page does not jump. none puts only the width: use it if images look squashed in a narrow window (GitHub caps an image at the column width, which a fixed height does not follow)."
+    default: 'auto-ratio'
+  comment-mode:
+    required: false
+    description: "update (default) edits the comment this action posted earlier on the pull request (found by comment-tag), new always posts a new comment."
+    default: 'update'
+  comment-tag:
+    required: false
+    description: "Identifies the comment for comment-mode update, through a hidden marker line. Use a different tag for every call of this action on the same pull request (calls must not run in parallel with the same tag). Default 'screenshots'."
+    default: 'screenshots'
+  comment-headline:
+    required: false
+    description: "Headline of the comment. Default 'Screenshots'."
+    default: 'Screenshots'
+  comment-footer:
+    required: false
+    description: "Add a small footer with the commit and a link to the workflow run. false, 0, no and off switch it off. Default true."
+    default: true
 runs:
   using: 'composite'
   steps:
@@ -114,3 +154,13 @@ runs:
         PRE_SCRIPT_PATH: ${{ inputs.pre-script-path }}
         PRE_SCRIPT_TIMEOUT: ${{ inputs.pre-script-timeout }}
         INPUT_RELEASE-ID: ${{ inputs.release-id }}
+        INPUT_COMMENT: ${{ inputs.comment }}
+        INPUT_COMMENT-LAYOUT: ${{ inputs.comment-layout }}
+        INPUT_COMMENT-OPEN: ${{ inputs.comment-open }}
+        INPUT_COMMENT-GROUP-BY: ${{ inputs.comment-group-by }}
+        INPUT_COMMENT-IMAGE-WIDTH: ${{ inputs.comment-image-width }}
+        INPUT_COMMENT-IMAGE-HEIGHT: ${{ inputs.comment-image-height }}
+        INPUT_COMMENT-MODE: ${{ inputs.comment-mode }}
+        INPUT_COMMENT-TAG: ${{ inputs.comment-tag }}
+        INPUT_COMMENT-HEADLINE: ${{ inputs.comment-headline }}
+        INPUT_COMMENT-FOOTER: ${{ inputs.comment-footer }}
