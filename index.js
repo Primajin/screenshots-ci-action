@@ -9,7 +9,10 @@ import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
 import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
-import {renderComment} from './comment.js';
+import {commentMarker, renderComment} from './comment.js';
+import {resolveCommentOptions} from './comment-options.js';
+import {readImageSize} from './image-size.js';
+import {publishComment} from './pr-comment.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -106,6 +109,12 @@ async function run() {
 			timeout: core.getInput('wait-for-selector-timeout'),
 		});
 
+		// How the PR comment looks and where it goes (see "PR comments" in the README)
+		const {options: commentOptions, warnings: commentWarnings} = resolveCommentOptions(core.getInput);
+		for (const message of commentWarnings) {
+			console.warn(message);
+		}
+
 		core.startGroup('Action config');
 		console.log('Input args:', {
 			url,
@@ -118,6 +127,7 @@ async function run() {
 			waitUntil,
 			waitForSelector,
 			waitForSelectorOptions,
+			comment: commentOptions,
 		});
 		core.endGroup(); // Action config
 
@@ -274,7 +284,7 @@ async function run() {
 		await browser.close();
 
 		// 6. Run screenshot post task
-		await postProcesses();
+		await postProcesses(commentOptions);
 	} catch (error) {
 		console.error(error);
 		core.setFailed(error.message);
@@ -289,8 +299,56 @@ async function run() {
 	}
 }
 
-// Comment files to PR
-async function uploadAndCommnetImage(files) {
+// GitHub rejects comment bodies above 65536 characters
+const MAX_COMMENT_LENGTH = 65_000;
+
+// Where the footer points: the commit under review and this workflow run
+function buildFooter(pullRequest) {
+	const {GITHUB_SERVER_URL: server, GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId} = process.env;
+	return {
+		sha: pullRequest?.head?.sha ?? process.env.GITHUB_SHA,
+		runUrl: server && repository && runId
+			? `${server}/${repository}/actions/runs/${runId}`
+			: undefined,
+	};
+}
+
+// Upload the images to the release; resolves to the ones that made it
+async function uploadImages(octokit, {owner, repo, releaseId}, files) {
+	const ISOTime = new Date().toISOString();
+	const uploaded = [];
+	for (const fileName of files) {
+		try {
+			// Upload image file to release page
+			const data = await fs.readFile(`${PATH}${fileName}`);
+			const result = await octokit.rest.repos.uploadReleaseAsset({
+				owner,
+				repo,
+				release_id: releaseId,
+				name: `${ISOTime}-${fileName}`,
+				data,
+			});
+			console.log('uploadReleaseAsset:', result);
+			if (result.data.browser_download_url) {
+				uploaded.push({
+					fileName,
+					name: `${ISOTime}-${fileName}`,
+					url: result.data.browser_download_url,
+					bytes: data.length,
+					...readImageSize(data),
+				});
+			}
+		} catch (error) {
+			console.error(`Failed to upload: ${fileName}`);
+			console.error(error);
+		}
+	}
+
+	return uploaded;
+}
+
+// Upload the images to the release and, unless switched off, post them to the PR
+async function uploadAndCommentImages(files, commentOptions) {
 	try {
 		const {
 			repo: {owner, repo},
@@ -300,56 +358,45 @@ async function uploadAndCommnetImage(files) {
 		const releaseId = core.getInput('release-id') || '';
 		const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
 
-		const ISOTime = new Date().toISOString();
-
-		const uploadedImage = [];
-		for (const fileName of files) {
-			try {
-				// Upload image file to release page
-				const data = await fs.readFile(`${PATH}${fileName}`);
-				const result = await octokit.rest.repos.uploadReleaseAsset({
-					owner,
-					repo,
-					release_id: releaseId,
-					name: `${ISOTime}-${fileName}`,
-					data,
-				});
-				console.log('uploadReleaseAsset:', result);
-				if (result.data.browser_download_url) {
-					uploadedImage.push({
-						fileName,
-						name: `${ISOTime}-${fileName}`,
-						url: result.data.browser_download_url,
-						bytes: data.length,
-					});
-				}
-			} catch (error) {
-				console.error(`Failed to upload: ${fileName}`);
-				console.error(error);
-			}
+		const uploaded = await uploadImages(octokit, {owner, repo, releaseId}, files);
+		if (uploaded.length === 0) {
+			return;
 		}
 
-		if (uploadedImage.length > 0) {
-			try {
-				const body = renderComment(uploadedImage, files);
+		if (!pull_request || !commentOptions.comment) {
+			console.log('Comment skipped, uploaded:', uploaded.map(image => image.url));
+			return;
+		}
 
-				const result = await octokit.rest.issues.createComment({
-					owner,
-					repo,
-					issue_number: pull_request.number,
-					body,
-				});
-				console.log('createComment:', result);
-			} catch (error) {
-				console.error(error);
+		try {
+			const renderOptions = {
+				...commentOptions,
+				footer: commentOptions.footer ? buildFooter(pull_request) : null,
+			};
+			let body = renderComment(uploaded, files, renderOptions);
+			if (body.length > MAX_COMMENT_LENGTH && renderOptions.layout !== 'links') {
+				console.warn(`The comment has ${body.length} characters, more than GitHub allows; posting only links instead of the images.`);
+				body = renderComment(uploaded, files, {...renderOptions, layout: 'links'});
 			}
+
+			const result = await publishComment(octokit, {
+				owner,
+				repo,
+				issueNumber: pull_request.number,
+				body,
+				marker: commentMarker(commentOptions.tag),
+				mode: commentOptions.mode,
+			});
+			console.log(`Comment ${result.action}:`, result.id);
+		} catch (error) {
+			console.error(error);
 		}
 	} catch (error) {
 		console.error(error);
 	}
 }
 
-async function postProcesses() {
+async function postProcesses(commentOptions) {
 	const files = await fs.readdir(PATH);
 	if (files.length === 0) {
 		return;
@@ -365,7 +412,8 @@ async function postProcesses() {
 		});
 	}
 
-	// Commnet files to PR
+	// Upload to the release and comment on the PR. Without a pull request there is
+	// nothing to comment on, but `comment: false` still uploads (a push workflow).
 	const {
 		repo: {owner, repo},
 		payload: {pull_request},
@@ -375,11 +423,11 @@ async function postProcesses() {
 	if (
 		Boolean(owner)
 		&& Boolean(repo)
-		&& Boolean(pull_request)
+		&& (Boolean(pull_request) || !commentOptions.comment)
 		&& Boolean(releaseId)
 		&& process.env.GITHUB_TOKEN
 	) {
-		await uploadAndCommnetImage(files);
+		await uploadAndCommentImages(files, commentOptions);
 	}
 }
 
