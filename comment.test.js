@@ -74,7 +74,7 @@ describe('renderCommentBody', () => {
       files
     );
     expect(body).toContain(
-      '## 2026-10-16T10.00.00.000Z-iPhone_13-abc1234.jpeg (10 parts, 5.0 MB total)\n'
+      '## 2026-10-16T10.00.00.000Z-iPhone_13-abc1234.jpeg (10 parts, 5.0 MB total) (parts 3, 4, 5, 6, 7, 8, 9 failed to upload)\n'
     );
     expect(body).toContain(
       '- part 1 of 10: https://x/1\n- part 2 of 10: https://x/2\n- part 10 of 10: https://x/3\n'
@@ -90,9 +90,27 @@ describe('renderCommentBody', () => {
       [entry(files[0], 'https://x/1'), entry(files[2], 'https://x/3')],
       files
     );
-    expect(body).toContain('(3 parts, 2 KB total)');
+    expect(body).toContain('(3 parts, 2 KB total) (part 2 failed to upload)');
     expect(body).toContain('part 3 of 3');
     expect(body).not.toContain('part 2 of 3');
+  });
+
+  it('names every part that failed to upload, also the last one', () => {
+    const files = [
+      'a-part1.jpeg',
+      'a-part2.jpeg',
+      'a-part3.jpeg',
+      'a-part4.jpeg',
+    ];
+    const body = renderCommentBody([entry(files[0], 'https://x/1')], files);
+    expect(body).toContain(
+      '(4 parts, 1 KB total) (parts 2, 3, 4 failed to upload)'
+    );
+    const complete = renderCommentBody(
+      files.map((file, index) => entry(file, `https://x/${index}`)),
+      files
+    );
+    expect(complete).not.toContain('failed to upload');
   });
 
   it('mixes parts and single images', () => {
