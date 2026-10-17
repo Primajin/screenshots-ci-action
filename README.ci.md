@@ -16,12 +16,13 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-devices` | iPhone 13 (1170x1992) and iPad Pro 11 landscape (2388x1668) pixel sizes |
 | `pass-no-desktop` | only the device file exists and it is viewport sized, not full page |
 | `pass-full-page` | `fullPage: true` is taller than the viewport, `false` is exactly the viewport |
+| `pass-full-page-tall` | the 20276px `?mode=tall` page (fullPage) is captured in consecutive parts (3 for an iPad Pro 11 by default, 16 for an iPhone 13 with `maxImageHeight: 4000`; `99999` is clamped and logged): at most the maximum per part, parts add up to the page, no blank 250px bands, no part repeats the top of the page |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
-| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment with images (see below) |
+| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment with images, also for a tall page in parts (one comment with `part N of M`), see below |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
 | `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
 | `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
@@ -50,6 +51,10 @@ writes a table (file, format, dimensions, size) to the job summary.
   - `?mode=late` shows a spinner (`#spinner`) for 4000 ms, then a green
     banner and a 3200px high `#late` block (the wait scenarios).
   - `?mode=wait-until` prints the navigation timings (the wait-until scenario).
+  - `?mode=tall` is a 20276px document of 40 scroll-reveal sections (blank
+    until scrolled into view), each labelled with its y offset and striped in
+    its own colour, so every 250px band is unique (the full-page-tall scenario
+    and the release scenario).
 - `.github/smoke-fixtures/*.mjs` - the pre-scripts of the pre-script scenarios.
 - `.github/smoke-fixtures/login-server.js` - a local login server on port 8081
   that renders the same shop theme (`demo.css`, `demo.js`): a sign-in form, then

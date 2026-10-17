@@ -76,6 +76,12 @@ jobs:
       contents: read
     uses: ./.github/workflows/_pass_full-page.yml
 
+  pass-full-page-tall:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_full-page-tall.yml
+
   pass-no-commit-hash-file-name:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -139,6 +145,7 @@ jobs:
       - pass-devices
       - pass-external-login-pre-script
       - pass-full-page
+      - pass-full-page-tall
       - pass-no-commit-hash-file-name
       - pass-no-desktop
       - pass-pre-script-login
