@@ -8,7 +8,7 @@ for the selector, then takes the screenshots.
 
 | Input | Default | What it does |
 | --- | --- | --- |
-| `wait-for-selector` | `''` | CSS selector to wait for. Empty means no waiting beyond `wait-until`. |
+| `wait-for-selector` | `''` | Selector to wait for. Empty means no waiting beyond `wait-until`. |
 | `wait-for-selector-visible` | `false` | Wait until the element is in the DOM **and** visible (no `display: none` or `visibility: hidden`). |
 | `wait-for-selector-hidden` | `false` | Wait until the element is gone from the DOM **or** hidden. Use it to wait for a loading spinner to disappear. |
 | `wait-for-selector-timeout` | `30000` | Maximum wait in milliseconds. `0` disables the timeout. |
@@ -17,6 +17,10 @@ Without `wait-for-selector-visible` or `-hidden` the action waits for the
 element to be **attached** to the DOM (Playwright state `attached`). If both
 options are set, `visible` wins. The two options and the timeout do nothing
 without `wait-for-selector`.
+
+The selector is a [Playwright selector](https://playwright.dev/docs/other-locators):
+CSS (`#id`, `.class`) as in the examples, but also `text=Accept all` or
+`xpath=//button[1]`.
 
 If the selector does not show up in time the error is logged and the
 screenshots are taken anyway, so a slow page never fails the run.
@@ -33,6 +37,9 @@ on:
     branches:
     - main
 
+permissions:
+  contents: read
+
 jobs:
   screenshots:
     runs-on: ubuntu-latest
@@ -45,7 +52,7 @@ jobs:
         no-desktop: true
         devices: iPhone 6
         wait-for-selector: '#waitForElement'
-        wait-for-selector-timeout: 5000
+        wait-for-selector-timeout: 15000
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
@@ -53,7 +60,9 @@ jobs:
 ```
 
 (The URL is a small test page of the original project: it shows
-`#waitForElement` after a delay.)
+`#waitForElement` after about 8 seconds, so the timeout is set above that. With
+`5000` the wait would always time out and the screenshot would be taken without
+the element.)
 
 Wait for a spinner to go away:
 
