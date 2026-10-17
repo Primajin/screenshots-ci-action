@@ -9,7 +9,7 @@ import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
 import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
-import {renderCommentBody} from './comment.js';
+import {renderComment} from './comment.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -331,7 +331,7 @@ async function uploadAndCommnetImage(files) {
 
 		if (uploadedImage.length > 0) {
 			try {
-				const body = renderCommentBody(uploadedImage, files);
+				const body = renderComment(uploadedImage, files);
 
 				const result = await octokit.rest.issues.createComment({
 					owner,
