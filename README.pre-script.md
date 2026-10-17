@@ -1,9 +1,14 @@
-# Pre-script example
+# Pre-script: log in or set up the page before the screenshots
+
+[Back to the README](README.md)
 
 Use a pre-script to log in, set a cookie or dismiss a cookie banner **before**
 screenshots are taken. The pre-script runs once; the resulting session
 (cookies and `localStorage`) is then reused for the desktop screenshots and for
 every device, so a login persists across all viewports.
+
+Inputs: `pre-script-path` (empty by default: no pre-script) and
+`pre-script-timeout` (milliseconds, default `30000`).
 
 `pre-script-path` points to a JavaScript module (relative to
 `GITHUB_WORKSPACE`, so run `actions/checkout` first) whose **default export** is
@@ -51,7 +56,10 @@ name: screenshots ci actions
 on:
   push:
     branches:
-    - master
+    - main
+
+permissions:
+  contents: read
 
 jobs:
   screenshots:
