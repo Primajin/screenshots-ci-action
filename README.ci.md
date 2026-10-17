@@ -39,10 +39,22 @@ writes a table (file, format, dimensions, size) to the job summary.
   Unit tested in `assert-screenshots.test.js`.
 - `.github/actions/serve-fixtures` - serves `.github/smoke-fixtures/site` on
   `http://localhost:8080/` and waits until it answers.
-- `.github/smoke-fixtures/site` - a tall page and a page that adds `#late`
-  after 4 seconds.
-- `.github/smoke-fixtures/*.mjs`, `login-server.js` - pre-scripts and the local
-  login server for the pre-script scenarios.
+- `.github/smoke-fixtures/site` - the "Acme Demo Shop" page every scenario
+  captures (`index.html`, `demo.css`, `demo.js`, plain HTML/CSS/JS):
+  - The dark header band prints the measured viewport, for example
+    `1170 x 1992 px @3x | mobile`, and a badge follows the CSS breakpoints
+    (`<600`, `>=600`, `>=960`, `>=1140`, `>=1920`).
+  - A ruler on the left edge is labelled every 500px, and the footer prints
+    `end of page - document height NNNN px`, so a viewport capture never shows
+    the footer while a full-page capture does.
+  - `?mode=late` shows a spinner (`#spinner`) for 4000 ms, then a green
+    banner and a 3200px high `#late` block (the wait scenarios).
+  - `?mode=wait-until` prints the navigation timings (the wait-until scenario).
+- `.github/smoke-fixtures/*.mjs` - the pre-scripts of the pre-script scenarios.
+- `.github/smoke-fixtures/login-server.js` - a local login server on port 8081
+  that renders the same shop theme (`demo.css`, `demo.js`): a sign-in form, then
+  a `Signed in as demo-user` banner on `/` only when the session cookie is sent
+  (otherwise a `Signed out` notice). It logs every request with its cookie.
 
 ## The CI pre-release
 
