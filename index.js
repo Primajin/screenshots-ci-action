@@ -3,7 +3,6 @@
 import {promises as fs} from 'node:fs';
 import process from 'node:process';
 import * as core from '@actions/core';
-import * as io from '@actions/io';
 import * as github from '@actions/github';
 import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
@@ -13,6 +12,7 @@ import {buildCommentBody, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
+import {ensureScreenshotsDir, listScreenshots} from './screenshots-dir.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -160,9 +160,9 @@ async function run() {
 		// via `npx playwright install --with-deps chromium`.
 		browser = await chromium.launch();
 
-		if (process.env.GITHUB_WORKSPACE) {
-			await io.mkdirP(`${process.env.GITHUB_WORKSPACE}/screenshots/`);
-		}
+		// Always: also without GITHUB_WORKSPACE (a local run) the parts of a tall page
+		// are written with fs.writeFile, which does not create the directory
+		await ensureScreenshotsDir(PATH);
 
 		// 3b. Optional pre-script (login, cookie banner, ...). It runs once on a
 		// base context; the resulting cookies/localStorage are copied into every
@@ -393,8 +393,9 @@ async function uploadAndCommentImages(files, commentOptions) {
 }
 
 async function postProcesses(commentOptions) {
-	const files = await fs.readdir(PATH);
+	const files = await listScreenshots(PATH);
 	if (files.length === 0) {
+		console.warn(`No screenshots were found in ${PATH}; nothing to send or post.`);
 		return;
 	}
 
@@ -410,10 +411,9 @@ async function postProcesses(commentOptions) {
 
 	// Upload to the release and comment on the PR. Without a pull request there is
 	// nothing to comment on, but `comment: false` still uploads (a push workflow).
-	const {
-		repo: {owner, repo},
-		payload: {pull_request},
-	} = github.context;
+	// context.repo throws without GITHUB_REPOSITORY, as in a local run
+	const {owner, repo} = process.env.GITHUB_REPOSITORY ? github.context.repo : {};
+	const {pull_request} = github.context.payload;
 	const releaseId = core.getInput('release-id') || '';
 
 	const decision = shouldUpload({
