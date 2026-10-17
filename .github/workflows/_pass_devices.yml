@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - iPhone 13 and iPad Pro 11 landscape next to the desktop sizes"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take screenshots with two devices

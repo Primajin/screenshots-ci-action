@@ -3,18 +3,19 @@
 // GET / -> "Signed in as demo-user" only with the cookie, "Signed out"
 // otherwise. Every request's Cookie header is appended to argv[2]; the
 // scenario asserts on those lines, so keep the log format as it is.
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
 
 const logFile = process.argv[2] || 'requests.log';
-const siteDir = path.join(__dirname, 'site');
-const STATIC = {
-  '/demo.css': 'text/css',
-  '/demo.js': 'text/javascript',
-};
+const siteDir = path.join(import.meta.dirname, 'site');
+const STATIC = new Map([
+	['/demo.css', 'text/css'],
+	['/demo.js', 'text/javascript'],
+]);
 
-const shell = (body) => `<!doctype html>
+const shell = body => `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -47,35 +48,38 @@ const account = `
   </section>`;
 
 http
-  .createServer((req, res) => {
-    const cookie = req.headers.cookie || '';
-    fs.appendFileSync(logFile, `${req.method} ${req.url} cookie=[${cookie}]\n`);
-    if (STATIC[req.url]) {
-      res.setHeader('content-type', STATIC[req.url]);
-      return res.end(fs.readFileSync(path.join(siteDir, req.url)));
-    }
-    res.setHeader('content-type', 'text/html');
-    if (req.url === '/login' && req.method === 'POST') {
-      req.resume();
-      res.writeHead(302, { 'set-cookie': 'session=1; Path=/', location: '/' });
-      return res.end();
-    }
-    if (req.url === '/login') {
-      return res.end(
-        shell(`
+	.createServer((request, response) => {
+		const cookie = request.headers.cookie || '';
+		fs.appendFileSync(logFile, `${request.method} ${request.url} cookie=[${cookie}]\n`);
+		if (STATIC.has(request.url)) {
+			response.setHeader('content-type', STATIC.get(request.url));
+			return response.end(fs.readFileSync(path.join(siteDir, request.url)));
+		}
+
+		response.setHeader('content-type', 'text/html');
+		if (request.url === '/login' && request.method === 'POST') {
+			request.resume();
+			response.writeHead(302, {'set-cookie': 'session=1; Path=/', location: '/'});
+			return response.end();
+		}
+
+		if (request.url === '/login') {
+			return response.end(
+				shell(`
   <div class="notice warn">Sign in to continue</div>
   <form class="signin" method="post" action="/login">
     <input name="user" aria-label="user name" placeholder="user name">
     <button>Sign in</button>
-  </form>`)
-      );
-    }
-    res.end(
-      shell(
-        cookie.includes('session=1')
-          ? `<div class="notice ok">Signed in as demo-user</div>${account}`
-          : '<div class="notice warn">Signed out: no session cookie was sent</div>'
-      )
-    );
-  })
-  .listen(8081);
+  </form>`),
+			);
+		}
+
+		response.end(
+			shell(
+				cookie.includes('session=1')
+					? `<div class="notice ok">Signed in as demo-user</div>${account}`
+					: '<div class="notice warn">Signed out: no session cookie was sent</div>',
+			),
+		);
+	})
+	.listen(8081);

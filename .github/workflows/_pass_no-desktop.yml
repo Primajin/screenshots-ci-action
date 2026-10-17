@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - only the device screenshot is taken and it is viewport sized"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take a device screenshot only

@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - domcontentloaded works and legacy networkidle0 is mapped with a log message"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take screenshots with domcontentloaded

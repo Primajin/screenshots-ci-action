@@ -4,91 +4,90 @@
 // the images directly next to each other (no whitespace between the tags), so
 // they read as one continuous page.
 
-const PART = /^(.*)-part(\d+)((?:-[^.]*)?\.[A-Za-z0-9]+)$/;
+const PART = /^(?<before>.*)-part(?<part>\d+)(?<after>(?:-[^.]*)?\.[\dA-Za-z]+)$/v;
+const PART_IN_NAME = /-part\d+(?=(?:-[^.]*)?\.[^.]+$)/v;
 
-/** @returns {{ group: string, part: number | null }} */
+// Splits "<name>-part<N>[-<hash>].<ext>" into the name without the part and the
+// part number (null for files that are not parts).
 function parseFileName(fileName) {
-  const match = PART.exec(fileName);
-  if (!match) {
-    return { group: fileName, part: null };
-  }
-  return { group: `${match[1]}${match[3]}`, part: Number(match[2]) };
+	const match = PART.exec(fileName);
+	if (!match) {
+		return {group: fileName, part: null};
+	}
+
+	return {
+		group: `${match.groups.before}${match.groups.after}`,
+		part: Number(match.groups.part),
+	};
 }
 
 function formatBytes(bytes) {
-  return bytes >= 1024 * 1024
-    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
-    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+	return bytes >= 1024 * 1024
+		? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+		: `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/**
- * @param {{ fileName: string, name: string, url: string, bytes: number }[]} uploaded
- *   fileName is the local name, name the uploaded asset name
- * @param {string[]} allFiles every local file name, to know how many parts a
- *   capture has even when some part failed to upload
- */
+// Highest part number per group, from every local file name, so the part count
+// is known even when a part failed to upload.
+function countParts(allFiles) {
+	const expectedParts = new Map();
+	for (const fileName of allFiles) {
+		const {group, part} = parseFileName(fileName);
+		if (part !== null) {
+			expectedParts.set(group, Math.max(expectedParts.get(group) ?? 0, part));
+		}
+	}
+
+	return expectedParts;
+}
+
+function renderGroup(entries, total) {
+	const [first] = entries;
+	if (first.part === null) {
+		return {
+			key: first.url,
+			text: `## ${first.name}\n- ${first.url}\n\n<img src=${first.url} />\n\n`,
+		};
+	}
+
+	const size = formatBytes(entries.reduce((sum, entry) => sum + entry.bytes, 0));
+	const heading = first.name.replace(PART_IN_NAME, '');
+	const lines = entries.map(entry => `- part ${entry.part} of ${total}: ${entry.url}`);
+	const missing = Array.from({length: total}, (_, index) => index + 1)
+		.filter(part => entries.every(entry => entry.part !== part));
+	const failed = missing.length > 0
+		? ` (part${missing.length > 1 ? 's' : ''} ${missing.join(', ')} failed to upload)`
+		: '';
+	const images = entries
+		.map(entry => `<img src=${entry.url} alt="part ${entry.part} of ${total}" />`)
+		.join('');
+	return {
+		key: first.url,
+		text: `## ${heading} (${total} parts, ${size} total)${failed}\n${lines.join('\n')}\n\n${images}\n\n`,
+	};
+}
+
+// Uploaded: {fileName (local), name (asset name), url, bytes}[]
+// allFiles: every local file name
 function renderCommentBody(uploaded, allFiles) {
-  const expectedParts = {};
-  allFiles.forEach((fileName) => {
-    const { group, part } = parseFileName(fileName);
-    if (part !== null) {
-      expectedParts[group] = Math.max(expectedParts[group] || 0, part);
-    }
-  });
+	const expectedParts = countParts(allFiles);
+	const groups = new Map();
+	for (const entry of uploaded) {
+		const {group, part} = parseFileName(entry.fileName);
+		groups.set(group, [...groups.get(group) ?? [], {...entry, part}]);
+	}
 
-  const groups = new Map();
-  uploaded.forEach((entry) => {
-    const { group, part } = parseFileName(entry.fileName);
-    if (!groups.has(group)) {
-      groups.set(group, []);
-    }
-    groups.get(group).push({ ...entry, part });
-  });
+	const blocks = [...groups].map(([group, entries]) =>
+		renderGroup(
+			entries.toSorted((a, b) => (a.part ?? 0) - (b.part ?? 0)),
+			expectedParts.get(group),
+		),
+	);
 
-  const blocks = [];
-  groups.forEach((entries, group) => {
-    entries.sort((a, b) => (a.part || 0) - (b.part || 0));
-    if (entries[0].part === null) {
-      const [{ name, url }] = entries;
-      blocks.push({
-        key: url,
-        text: `## ${name}\n- ${url}\n\n<img src=${url} />\n\n`,
-      });
-      return;
-    }
-    const total = expectedParts[group];
-    const size = formatBytes(entries.reduce((sum, e) => sum + e.bytes, 0));
-    const heading = entries[0].name.replace(
-      /-part\d+(?=(-[^.]*)?\.[^.]+$)/,
-      ''
-    );
-    const lines = entries.map((e) => `- part ${e.part} of ${total}: ${e.url}`);
-    const missing = [];
-    for (let part = 1; part <= total; part++) {
-      if (!entries.some((e) => e.part === part)) {
-        missing.push(part);
-      }
-    }
-    const failed = missing.length
-      ? ` (part${missing.length > 1 ? 's' : ''} ${missing.join(
-          ', '
-        )} failed to upload)`
-      : '';
-    const images = entries
-      .map((e) => `<img src=${e.url} alt="part ${e.part} of ${total}" />`)
-      .join('');
-    blocks.push({
-      key: entries[0].url,
-      text: `## ${heading} (${total} parts, ${size} total)${failed}\n${lines.join(
-        '\n'
-      )}\n\n${images}\n\n`,
-    });
-  });
-
-  return blocks
-    .sort((a, b) => a.key.localeCompare(b.key))
-    .map((block) => block.text)
-    .join('');
+	return blocks
+		.toSorted((a, b) => a.key.localeCompare(b.key))
+		.map(block => block.text)
+		.join('');
 }
 
-module.exports = { formatBytes, parseFileName, renderCommentBody };
+export {formatBytes, parseFileName, renderCommentBody};

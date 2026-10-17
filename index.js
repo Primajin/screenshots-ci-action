@@ -1,43 +1,44 @@
-const core = require('@actions/core');
-const io = require('@actions/io');
-const github = require('@actions/github');
-const { chromium, devices } = require('playwright');
-const fs = require('fs').promises;
-const telegram = require('./telegram.js');
-const { runPreScript } = require('./pre-script.js');
-const {
-  isScrollEnabled,
-  resolveMaxImageHeight,
-  takeScreenshot,
-} = require('./capture.js');
-const { renderCommentBody } = require('./comment.js');
-const {
-  buildContextOptions,
-  buildSelectorWaitOptions,
-  formatInvalidDevicesError,
-  mapWaitUntil,
-  resolveDevices,
-} = require('./utils.js');
+/* eslint-disable no-await-in-loop -- screenshots and uploads are intentionally sequential */
+/* eslint-disable camelcase -- the GitHub REST API and webhook payload use snake_case */
+import {promises as fs} from 'node:fs';
+import process from 'node:process';
+import * as core from '@actions/core';
+import * as io from '@actions/io';
+import * as github from '@actions/github';
+import {chromium, devices} from 'playwright';
+import telegram from './telegram.js';
+import {runPreScript} from './pre-script.js';
+import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
+import {renderCommentBody} from './comment.js';
+import {
+	buildContextOptions,
+	buildSelectorWaitOptions,
+	describeWaitUntil,
+	formatInvalidDevicesError,
+	mapWaitUntil,
+	normalizeScreenshotType,
+	resolveDevices,
+} from './utils.js';
 
 const DEFAULT_DESKTOP_VIEWPOINT_RATIO = [
-  { width: 540, height: 405 },
-  { width: 600, height: 450 },
-  { width: 720, height: 540 },
-  { width: 960, height: 720 },
-  { width: 1140, height: 640 },
-  { width: 1280, height: 720 },
-  { width: 1920, height: 1080 },
+	{width: 540, height: 405},
+	{width: 600, height: 450},
+	{width: 720, height: 540},
+	{width: 960, height: 720},
+	{width: 1140, height: 640},
+	{width: 1280, height: 720},
+	{width: 1920, height: 1080},
 ];
 
 const DEFAULT_TYPE = 'jpeg';
 const deviceNames = Object.keys(devices);
 const PATH = process.env.GITHUB_WORKSPACE
-  ? `${process.env.GITHUB_WORKSPACE}/screenshots/`
-  : `screenshots/`;
+	? `${process.env.GITHUB_WORKSPACE}/screenshots/`
+	: 'screenshots/';
 
 const POST_FIX = process.env.GITHUB_SHA
-  ? `${process.env.GITHUB_SHA}`.substr(0, 7)
-  : `${new Date().getTime()}`;
+	? String(process.env.GITHUB_SHA).slice(0, 7)
+	: String(Date.now());
 
 const DEFAULT_WAIT_FOR_SELECTOR = '';
 
@@ -46,345 +47,340 @@ let browser;
 // Wait for the configured selector. A timeout must not break the flow, so the
 // error is logged and the screenshot is taken anyway (unchanged behaviour).
 async function waitForConfiguredSelector(page, selector, options) {
-  if (!selector) {
-    return;
-  }
-  try {
-    await page.waitForSelector(selector, options);
-  } catch (error) {
-    console.error(error);
-  }
+	if (!selector) {
+		return;
+	}
+
+	try {
+		await page.waitForSelector(selector, options);
+	} catch (error) {
+		console.error(error);
+	}
 }
 
 async function run() {
-  try {
-    // 1. Get User config
+	try {
+		// 1. Get User config
 
-    const url = core.getInput('url') || '';
-    const devicesInput = core.getInput('devices') || '';
-    const noDesktop = core.getInput('noDesktop') === 'true';
-    const fullPage = core.getInput('fullPage') === 'true';
-    // Only matters for full page captures; on unless explicitly switched off.
-    const scrollBeforeCapture = isScrollEnabled(
-      core.getInput('scrollBeforeCapture')
-    );
-    const maxImage = resolveMaxImageHeight(core.getInput('maxImageHeight'));
-    if (maxImage.warning) {
-      console.warn(maxImage.warning);
-    }
-    const maxImageHeight = maxImage.value;
-    const noCommitHashFileName =
-      core.getInput('noCommitHashFileName') === 'true';
+		const url = core.getInput('url');
+		const devicesInput = core.getInput('devices');
+		const isNoDesktop = core.getInput('noDesktop') === 'true';
+		const isFullPage = core.getInput('fullPage') === 'true';
+		// Only matters for full page captures; on unless explicitly switched off.
+		const isScrollBeforeCapture = isScrollEnabled(core.getInput('scrollBeforeCapture'));
+		const maxImage = resolveMaxImageHeight(core.getInput('maxImageHeight'));
+		if (maxImage.warning) {
+			console.warn(maxImage.warning);
+		}
 
-    let screenshotType = core.getInput('type') || DEFAULT_TYPE;
-    screenshotType = screenshotType.toLowerCase();
-    if (!['png', 'jpeg'].includes(screenshotType)) {
-      screenshotType = DEFAULT_TYPE;
-    }
+		const maxImageHeight = maxImage.value;
+		const isNoCommitHashFileName
+			= core.getInput('noCommitHashFileName') === 'true';
 
-    // Playwright values plus legacy Puppeteer values (networkidle0/2).
-    const waitUntilInput = core.getInput('waitUntil');
-    const {
-      value: waitUntil,
-      fallback: waitUntilFallback,
-      mappedFrom: waitUntilMappedFrom,
-    } = mapWaitUntil(waitUntilInput);
-    if (waitUntilFallback) {
-      console.warn(
-        `Unknown waitUntil "${waitUntilInput}", using "${waitUntil}".`
-      );
-    }
-    if (waitUntilMappedFrom) {
-      console.log(
-        `waitUntil "${waitUntilMappedFrom}" is a legacy Puppeteer value, using Playwright's "${waitUntil}".`
-      );
-    }
+		const screenshotType = normalizeScreenshotType(core.getInput('type'), DEFAULT_TYPE);
 
-    const waitForSelector =
-      core.getInput('waitForSelector') || DEFAULT_WAIT_FOR_SELECTOR;
+		// Playwright values plus legacy Puppeteer values (networkidle0/2).
+		const waitUntilInput = core.getInput('waitUntil');
+		const waitUntilResult = mapWaitUntil(waitUntilInput);
+		const {value: waitUntil} = waitUntilResult;
+		const {warning, notice} = describeWaitUntil(waitUntilInput, waitUntilResult);
+		if (warning) {
+			console.warn(warning);
+		}
 
-    // waitForSelectorHidden / waitForSelectorVisible default false
-    const waitForSelectorHidden =
-      `${core.getInput('waitForSelectorHidden')}`.toLowerCase() === 'true';
-    const waitForSelectorVisible =
-      `${core.getInput('waitForSelectorVisible')}`.toLowerCase() === 'true';
-    const waitForSelectorOptions = buildSelectorWaitOptions({
-      visible: waitForSelectorVisible,
-      hidden: waitForSelectorHidden,
-      timeout: core.getInput('waitForSelectorTimeout'),
-    });
+		if (notice) {
+			console.log(notice);
+		}
 
-    core.startGroup('Action config');
-    console.log('Input args:', {
-      url,
-      noDesktop: noDesktop,
-      devices: devicesInput,
-      fullPage,
-      scrollBeforeCapture,
-      maxImageHeight,
-      type: screenshotType,
-      waitUntil,
-      waitForSelector,
-      waitForSelectorOptions,
-    });
-    core.endGroup(); // Action config
+		const waitForSelector
+			= core.getInput('waitForSelector') || DEFAULT_WAIT_FOR_SELECTOR;
 
-    // 2. Verify User config
+		// WaitForSelectorHidden / waitForSelectorVisible default false
+		const isWaitForSelectorHidden
+			= core.getInput('waitForSelectorHidden').toLowerCase() === 'true';
+		const isWaitForSelectorVisible
+			= core.getInput('waitForSelectorVisible').toLowerCase() === 'true';
+		const waitForSelectorOptions = buildSelectorWaitOptions({
+			visible: isWaitForSelectorVisible,
+			hidden: isWaitForSelectorHidden,
+			timeout: core.getInput('waitForSelectorTimeout'),
+		});
 
-    if (!url) {
-      console.log([`Task done`, `- "url" is empty.`].join('\n'));
-      return;
-    }
+		core.startGroup('Action config');
+		console.log('Input args:', {
+			url,
+			noDesktop: isNoDesktop,
+			devices: devicesInput,
+			fullPage: isFullPage,
+			scrollBeforeCapture: isScrollBeforeCapture,
+			maxImageHeight,
+			type: screenshotType,
+			waitUntil,
+			waitForSelector,
+			waitForSelectorOptions,
+		});
+		core.endGroup(); // Action config
 
-    const { valid: includedDevices, invalid: invalidDevices } = resolveDevices(
-      devicesInput,
-      deviceNames
-    );
-    if (invalidDevices.length) {
-      throw new Error(formatInvalidDevicesError(invalidDevices));
-    }
+		// 2. Verify User config
 
-    if (noDesktop && !includedDevices.length) {
-      console.log(
-        [
-          `Task done`,
-          `- No desktop and and devices are selected. You have chose at least one desktop or device.`,
-        ].join('\n')
-      );
-      return;
-    }
+		if (!url) {
+			console.log(['Task done', '- "url" is empty.'].join('\n'));
+			return;
+		}
 
-    // 3. Launch Playwright (chromium). The browser is installed by action.yml
-    // via `npx playwright install --with-deps chromium`.
-    browser = await chromium.launch();
+		const {valid: includedDevices, invalid: invalidDevices} = resolveDevices(
+			devicesInput,
+			deviceNames,
+		);
+		if (invalidDevices.length > 0) {
+			throw new Error(formatInvalidDevicesError(invalidDevices));
+		}
 
-    if (process.env.GITHUB_WORKSPACE) {
-      await io.mkdirP(`${process.env.GITHUB_WORKSPACE}/screenshots/`);
-    }
+		if (isNoDesktop && includedDevices.length === 0) {
+			console.log(
+				[
+					'Task done',
+					'- No desktop and and devices are selected. You have chose at least one desktop or device.',
+				].join('\n'),
+			);
+			return;
+		}
 
-    // 3b. Optional pre-script (login, cookie banner, ...). It runs once on a
-    // base context; the resulting cookies/localStorage are copied into every
-    // desktop and device context below. Capture always starts after the
-    // pre-script returned, so startCapture() is a documented no-op.
-    let storageState;
-    if (process.env.PRE_SCRIPT_PATH) {
-      core.startGroup('Pre-script');
-      const baseContext = await browser.newContext();
-      try {
-        const basePage = await baseContext.newPage();
-        await runPreScript({
-          browser,
-          context: baseContext,
-          page: basePage,
-          url,
-        });
-        storageState = await baseContext.storageState();
-      } finally {
-        await baseContext.close().catch(() => {});
-        core.endGroup(); // Pre-script
-      }
-      console.log(
-        'Pre-script finished, session state is reused for all screenshots.'
-      );
-    }
+		// 3. Launch Playwright (chromium). The browser is installed by action.yml
+		// via `npx playwright install --with-deps chromium`.
+		browser = await chromium.launch();
 
-    // 4. Take desktop screenshots
+		if (process.env.GITHUB_WORKSPACE) {
+			await io.mkdirP(`${process.env.GITHUB_WORKSPACE}/screenshots/`);
+		}
 
-    if (!noDesktop) {
-      core.startGroup('start process desktop');
-      console.log('Processing desktop screenshot');
+		// 3b. Optional pre-script (login, cookie banner, ...). It runs once on a
+		// base context; the resulting cookies/localStorage are copied into every
+		// desktop and device context below. Capture always starts after the
+		// pre-script returned, so startCapture() is a documented no-op.
+		let storageState;
+		if (process.env.PRE_SCRIPT_PATH) {
+			core.startGroup('Pre-script');
+			const baseContext = await browser.newContext();
+			try {
+				const basePage = await baseContext.newPage();
+				await runPreScript({
+					browser,
+					context: baseContext,
+					page: basePage,
+					url,
+				});
+				storageState = await baseContext.storageState();
+			} finally {
+				await baseContext.close().catch(() => {});
+				core.endGroup(); // Pre-script
+			}
 
-      const desktopContext = await browser.newContext(
-        buildContextOptions(
-          { viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0] },
-          storageState
-        )
-      );
-      const desktopPage = await desktopContext.newPage();
+			console.log(
+				'Pre-script finished, session state is reused for all screenshots.',
+			);
+		}
 
-      await desktopPage.goto(url, { waitUntil });
-      // wait for page element when config has element selector
-      await waitForConfiguredSelector(
-        desktopPage,
-        waitForSelector,
-        waitForSelectorOptions
-      );
+		// 4. Take desktop screenshots
 
-      for (const { width, height } of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
-        // filename with/without post fix commit hash name; a very tall page
-        // is split into -part1, -part2, ... inserted before that suffix
-        const desktopPath = (part) =>
-          noCommitHashFileName
-            ? `${PATH}desktopPage${width}x${height}${part}.${screenshotType}`
-            : `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
+		if (!isNoDesktop) {
+			core.startGroup('start process desktop');
+			console.log('Processing desktop screenshot');
 
-        await desktopPage.setViewportSize({ width, height });
-        await takeScreenshot(desktopPage, {
-          pathFor: desktopPath,
-          maxImageHeight,
-          fullPage,
-          type: screenshotType,
-          scrollBeforeCapture,
-          waitUntil,
-          log: console.log,
-        });
-      }
-      await desktopContext.close();
-      core.endGroup(); // end start process desktop
-    }
+			const desktopContext = await browser.newContext(
+				buildContextOptions(
+					{viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0]},
+					storageState,
+				),
+			);
+			const desktopPage = await desktopContext.newPage();
 
-    // 5. Take mobile device screenshots
+			await desktopPage.goto(url, {waitUntil});
+			// Wait for page element when config has element selector
+			await waitForConfiguredSelector(
+				desktopPage,
+				waitForSelector,
+				waitForSelectorOptions,
+			);
 
-    if (includedDevices.length) {
-      core.startGroup('start process mobile devices');
-      console.log('Processing mobile devices screenshot');
+			for (const {width, height} of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
+				// Filename with/without post fix commit hash name; a very tall page is
+				// split into -part1, -part2, ... inserted before that suffix
+				const desktopPath = part =>
+					isNoCommitHashFileName
+						? `${PATH}desktopPage${width}x${height}${part}.${screenshotType}`
+						: `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
 
-      for (const deviceName of includedDevices) {
-        // filename with/without post fix commit hash name
-        const mobileBase = `${PATH}${deviceName.replace(/ /g, '_')}`;
-        const mobilePath = (part) =>
-          noCommitHashFileName
-            ? `${mobileBase}${part}.${screenshotType}`
-            : `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
+				await desktopPage.setViewportSize({width, height});
+				await takeScreenshot(desktopPage, {
+					pathFor: desktopPath,
+					maxImageHeight,
+					fullPage: isFullPage,
+					type: screenshotType,
+					scrollBeforeCapture: isScrollBeforeCapture,
+					waitUntil,
+					log: console.log,
+				});
+			}
 
-        // Every device gets its own context built from Playwright's descriptor
-        // (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
-        const context = await browser.newContext(
-          buildContextOptions(devices[deviceName], storageState)
-        );
-        const page = await context.newPage();
+			await desktopContext.close();
+			core.endGroup(); // End start process desktop
+		}
 
-        await page.goto(url, { waitUntil });
-        // wait for page element when config has element selector
-        await waitForConfiguredSelector(
-          page,
-          waitForSelector,
-          waitForSelectorOptions
-        );
+		// 5. Take mobile device screenshots
 
-        await takeScreenshot(page, {
-          pathFor: mobilePath,
-          maxImageHeight,
-          fullPage,
-          type: screenshotType,
-          scrollBeforeCapture,
-          waitUntil,
-          log: console.log,
-        });
-        await context.close();
-      }
-      core.endGroup(); // end start process mobile devices
-    }
+		if (includedDevices.length > 0) {
+			core.startGroup('start process mobile devices');
+			console.log('Processing mobile devices screenshot');
 
-    await browser.close();
+			for (const deviceName of includedDevices) {
+				// Filename with/without post fix commit hash name
+				const mobileBase = `${PATH}${deviceName.replaceAll(' ', '_')}`;
+				const mobilePath = part =>
+					isNoCommitHashFileName
+						? `${mobileBase}${part}.${screenshotType}`
+						: `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
 
-    // 6. Run screenshot post task
-    await postProcesses();
-  } catch (error) {
-    console.error(error);
-    core.setFailed(error.message);
+				// Every device gets its own context built from Playwright's descriptor
+				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
+				const context = await browser.newContext(
+					buildContextOptions(devices[deviceName], storageState),
+				);
+				const page = await context.newPage();
 
-    if (browser && browser.close) {
-      // Cleanup must never mask the original error or skip the exit code.
-      await browser.close().catch(() => {});
-    }
+				await page.goto(url, {waitUntil});
+				// Wait for page element when config has element selector
+				await waitForConfiguredSelector(
+					page,
+					waitForSelector,
+					waitForSelectorOptions,
+				);
 
-    process.exit(1);
-  }
+				await takeScreenshot(page, {
+					pathFor: mobilePath,
+					maxImageHeight,
+					fullPage: isFullPage,
+					type: screenshotType,
+					scrollBeforeCapture: isScrollBeforeCapture,
+					waitUntil,
+					log: console.log,
+				});
+				await context.close();
+			}
+
+			core.endGroup(); // End start process mobile devices
+		}
+
+		await browser.close();
+
+		// 6. Run screenshot post task
+		await postProcesses();
+	} catch (error) {
+		console.error(error);
+		core.setFailed(error.message);
+
+		if (browser && browser.close) {
+			// Cleanup must never mask the original error or skip the exit code.
+			await browser.close().catch(() => {});
+		}
+
+		// eslint-disable-next-line unicorn/no-process-exit -- must exit non-zero immediately
+		process.exit(1);
+	}
 }
 
 // Comment files to PR
 async function uploadAndCommnetImage(files) {
-  try {
-    const {
-      repo: { owner, repo },
-      payload: { pull_request },
-    } = github.context;
+	try {
+		const {
+			repo: {owner, repo},
+			payload: {pull_request},
+		} = github.context;
 
-    const releaseId = core.getInput('releaseId') || '';
-    const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
+		const releaseId = core.getInput('releaseId') || '';
+		const octokit = github.getOctokit(process.env.GITHUB_TOKEN);
 
-    const ISOTime = new Date().toISOString();
+		const ISOTime = new Date().toISOString();
 
-    const uploadedImage = [];
-    for (const fileName of files) {
-      try {
-        // upload image file to release page
-        const data = await fs.readFile(`${PATH}${fileName}`);
-        const result = await octokit.rest.repos.uploadReleaseAsset({
-          owner,
-          repo,
-          release_id: releaseId,
-          name: `${ISOTime}-${fileName}`,
-          data,
-        });
-        console.log('uploadReleaseAsset:', result);
-        if (result.data.browser_download_url) {
-          uploadedImage.push({
-            fileName,
-            name: `${ISOTime}-${fileName}`,
-            url: result.data.browser_download_url,
-            bytes: data.length,
-          });
-        }
-      } catch (error) {
-        console.error(`Failed to upload: ${fileName}`);
-        console.error(error);
-      }
-    }
+		const uploadedImage = [];
+		for (const fileName of files) {
+			try {
+				// Upload image file to release page
+				const data = await fs.readFile(`${PATH}${fileName}`);
+				const result = await octokit.rest.repos.uploadReleaseAsset({
+					owner,
+					repo,
+					release_id: releaseId,
+					name: `${ISOTime}-${fileName}`,
+					data,
+				});
+				console.log('uploadReleaseAsset:', result);
+				if (result.data.browser_download_url) {
+					uploadedImage.push({
+						fileName,
+						name: `${ISOTime}-${fileName}`,
+						url: result.data.browser_download_url,
+						bytes: data.length,
+					});
+				}
+			} catch (error) {
+				console.error(`Failed to upload: ${fileName}`);
+				console.error(error);
+			}
+		}
 
-    if (uploadedImage.length) {
-      try {
-        const body = renderCommentBody(uploadedImage, files);
+		if (uploadedImage.length > 0) {
+			try {
+				const body = renderCommentBody(uploadedImage, files);
 
-        const result = await octokit.rest.issues.createComment({
-          owner,
-          repo,
-          issue_number: pull_request.number,
-          body,
-        });
-        console.log('createComment:', result);
-      } catch (error) {
-        console.error(error);
-      }
-    }
-  } catch (error) {
-    console.error(error);
-  }
+				const result = await octokit.rest.issues.createComment({
+					owner,
+					repo,
+					issue_number: pull_request.number,
+					body,
+				});
+				console.log('createComment:', result);
+			} catch (error) {
+				console.error(error);
+			}
+		}
+	} catch (error) {
+		console.error(error);
+	}
 }
 
 async function postProcesses() {
-  const files = await fs.readdir(PATH);
-  if (!files.length) {
-    return;
-  }
+	const files = await fs.readdir(PATH);
+	if (files.length === 0) {
+		return;
+	}
 
-  // Send files to telegram
-  if (!!process.env.TELE_CHAT_ID && !!process.env.TELE_BOT_TOKEN) {
-    await telegram({
-      path: PATH,
-      files,
-      teleChatId: process.env.TELE_CHAT_ID,
-      teltBotToken: process.env.TELE_BOT_TOKEN,
-    });
-  }
+	// Send files to telegram
+	if (Boolean(process.env.TELE_CHAT_ID) && Boolean(process.env.TELE_BOT_TOKEN)) {
+		await telegram({
+			path: PATH,
+			files,
+			teleChatId: process.env.TELE_CHAT_ID,
+			teltBotToken: process.env.TELE_BOT_TOKEN,
+		});
+	}
 
-  // Commnet files to PR
-  const {
-    repo: { owner, repo },
-    payload: { pull_request },
-  } = github.context;
-  const releaseId = core.getInput('releaseId') || '';
+	// Commnet files to PR
+	const {
+		repo: {owner, repo},
+		payload: {pull_request},
+	} = github.context;
+	const releaseId = core.getInput('releaseId') || '';
 
-  if (
-    !!owner &&
-    !!repo &&
-    !!pull_request &&
-    !!releaseId &&
-    process.env.GITHUB_TOKEN
-  ) {
-    await uploadAndCommnetImage(files);
-  }
+	if (
+		Boolean(owner)
+		&& Boolean(repo)
+		&& Boolean(pull_request)
+		&& Boolean(releaseId)
+		&& process.env.GITHUB_TOKEN
+	) {
+		await uploadAndCommnetImage(files);
+	}
 }
 
-run();
+await run();

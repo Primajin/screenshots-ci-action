@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - a 20000px page is captured in consecutive parts that add up to the page, have no blank regions and no seams"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Capture the tall page with the default max image height

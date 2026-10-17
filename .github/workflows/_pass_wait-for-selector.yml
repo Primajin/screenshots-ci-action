@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - visible, hidden and timeout 0 wait for the late element; a timeout still shoots"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Wait for #late to become visible

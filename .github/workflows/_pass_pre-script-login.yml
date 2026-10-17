@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - a pre-script logs in once and the session is used by desktop and device captures"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the login fixture
         run: |
           rm -f _login-requests.log

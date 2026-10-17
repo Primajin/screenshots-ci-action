@@ -12,7 +12,7 @@ jobs:
     name: "Should pass - only url is set: 7 desktop sizes as viewport sized jpeg with commit hash"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - name: Serve the fixture site
         uses: ./.github/actions/serve-fixtures
       - name: Take screenshots with default options
