@@ -1,5 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import {
+	GITHUB_MAX_IMAGE_HEIGHT,
 	MAX_COMMENT_LENGTH,
 	buildCommentBody,
 	captureLabel,
@@ -135,13 +136,14 @@ describe('renderComment defaults', () => {
 		expect(order.every(position => position > 0)).toBe(true);
 	});
 
-	it('puts width and height on every image', () => {
+	it('puts width and height on every image that GitHub keeps them for', () => {
 		expect(count(body, '<img ')).toBe(5);
 		expect(body).toContain('alt="Desktop 540" width="540" height="405">');
 		expect(body).toContain('alt="Desktop 1140" width="600" height="337">');
-		expect(body).toContain('alt="iPhone 13, part 1 of 3" width="600" height="8205">');
-		expect(body).toContain('alt="iPhone 13, part 3 of 3" width="600" height="2193">');
-		expect(body.match(/<img [^>]*>/gv).every(tag => /width="\d+" height="\d+"/v.test(tag))).toBe(true);
+		expect(body).toContain('alt="iPad Pro 11" width="600" height="859">');
+		// Parts are far taller than 2000 pixels: only the width (see the tall page tests)
+		expect(body).toContain('alt="iPhone 13, part 1 of 3" width="600">');
+		expect(body).toContain('alt="iPhone 13, part 3 of 3" width="600">');
 	});
 
 	it('shows no footer without commit and run information', () => {
@@ -158,12 +160,12 @@ describe('parts', () => {
 	});
 
 	it('lists the links with part numbers out of the known part count', () => {
-		expect(body).toContain('- part 1 of 3: https://x/p1\n- part 3 of 3: https://x/p3\n');
+		expect(body).toContain('- [part 1 of 3: open full size](https://x/p1)\n- [part 3 of 3: open full size](https://x/p3)\n');
 		expect(body).not.toContain('part 2 of 3');
 	});
 
-	it('puts the images of one capture directly next to each other, in part order', () => {
-		expect(body).toMatch(/alt="iPhone 13, part 1 of 3"[^>]*><img [^>]*alt="iPhone 13, part 3 of 3"/v);
+	it('stacks the images of one capture with a line break between them, in part order', () => {
+		expect(body).toMatch(/alt="iPhone 13, part 1 of 3"[^>]*><br><img [^>]*alt="iPhone 13, part 3 of 3"/v);
 	});
 
 	it('orders parts by number, not by text', () => {
@@ -250,6 +252,12 @@ describe('every layout x open x group-by', () => {
 						}
 					});
 
+					it('never writes a height above what GitHub keeps', () => {
+						for (const [, height] of body.matchAll(/height="(?<height>\d+)"/gv)) {
+							expect(Number(height)).toBeLessThanOrEqual(2000);
+						}
+					});
+
 					it('links every uploaded image', () => {
 						for (const {url} of uploaded) {
 							expect(body).toContain(url);
@@ -263,7 +271,7 @@ describe('every layout x open x group-by', () => {
 	it('renders inline groups as headings', () => {
 		const body = renderComment(uploaded, files, {layout: 'inline'});
 		expect(count(body, '#### ')).toBe(4);
-		expect(body).toContain('#### Desktop 540 · 540 × 405 px · 1 KB\n\n- https://x/d540\n\n<img ');
+		expect(body).toContain('#### Desktop 540 · 540 × 405 px · 1 KB\n\n- [open full size](https://x/d540)\n\n<img ');
 	});
 
 	it('names a single accordion with everything and lists the captures inside', () => {
@@ -318,7 +326,7 @@ describe('image width', () => {
 			{layout: 'inline', imageWidth: 0, headline: 'Screenshots'},
 		);
 		expect(body).toBe(
-			'<!-- screenshots-ci-action:screenshots -->\n### Screenshots\n\n#### iPhone 13 · 1 KB\n\n- https://x/b.jpeg\n\n<img src="https://x/b.jpeg" alt="iPhone 13">\n\n',
+			'<!-- screenshots-ci-action:screenshots -->\n### Screenshots\n\n#### iPhone 13 · 1 KB\n\n- [open full size](https://x/b.jpeg)\n\n<img src="https://x/b.jpeg" alt="iPhone 13">\n\n',
 		);
 	});
 });
@@ -342,26 +350,73 @@ describe('image height', () => {
 	});
 });
 
-describe('narrow parts', () => {
-	const partFiles = ['a-part1.jpeg', 'a-part2.jpeg'];
-	const parts = width => partFiles.map(name => entry(name, `https://x/${name}`, 1024, {width, height: 1000}));
+describe('tall pages (parts)', () => {
+	// The iPad Pro 11 capture of the CI scenario: 1668 x 16000, 16000 and 8552
+	const tallFiles = ['iPad_Pro_11-part1-abc1234.jpeg', 'iPad_Pro_11-part2-abc1234.jpeg', 'iPad_Pro_11-part3-abc1234.jpeg'];
+	const tall = tallFiles.map((name, index) => entry(name, `https://x/${index + 1}`, 1024, {width: 1668, height: index === 2 ? 8552 : 16_000}));
+	const imgTags = body => body.match(/<img [^>]*>/gv);
+	const widths = body => imgTags(body).map(tag => Number(/width="(?<width>\d+)"/v.exec(tag).groups.width));
 
-	it('stacks parts that would sit side by side with a line break', () => {
-		const body = renderComment(parts(1000), partFiles, {imageWidth: 300});
-		expect(body).toMatch(/width="300" height="300"><br><img /v);
-		const natural = renderComment(parts(375), partFiles);
-		expect(natural).toContain('><br><img ');
+	it('shows every part at the full display width, with the height left to the browser', () => {
+		const body = renderComment(tall, tallFiles);
+		expect(imgTags(body)).toHaveLength(3);
+		for (const tag of imgTags(body)) {
+			expect(tag).toContain(' width="600"');
+			// GitHub would cut a height above 2000 and shrink the width with it
+			expect(tag).not.toContain('height=');
+		}
+
+		expect(body).not.toMatch(/height="\d{4,}"/v);
 	});
 
-	it('puts nothing between wide parts, so they read as one page', () => {
-		const body = renderComment(parts(1000), partFiles, {imageWidth: 600});
-		expect(body).not.toContain('<br>');
-		expect(body).toContain('><img ');
-		expect(renderComment(parts(1000), partFiles, {imageWidth: 0})).not.toContain('<br>');
+	it('never makes a part narrower than the first because of its height', () => {
+		for (const options of [{}, {imageWidth: 300}, {imageWidth: 1000}, {imageWidth: 5000}, {layout: 'inline'}, {groupBy: 'none'}, {groupBy: 'all'}]) {
+			const sizes = widths(renderComment(tall, tallFiles, options));
+			expect(new Set(sizes).size).toBe(1);
+			expect(Math.min(...sizes)).toBe(Math.min(1668, options.imageWidth ?? 600));
+		}
 	});
 
-	it('does not break a single image', () => {
+	it('keeps an explicit height for parts that stay within what GitHub keeps', () => {
+		const short = tallFiles.map((name, index) => entry(name, `https://x/${index}`, 1024, {width: 1200, height: 3000}));
+		const body = renderComment(short, tallFiles);
+		expect(body).toContain('width="600" height="1500"');
+		expect(body).not.toContain('width="600">');
+		// 6000 high at 600 wide would be 3000 > 2000
+		const tallBody = renderComment(tall, tallFiles, {imageWidth: 1000});
+		expect(tallBody).not.toContain('height=');
+	});
+
+	it('uses the GitHub limit exactly: 2000 keeps the height, 2001 does not', () => {
+		const at = height => renderComment([entry('a.jpeg', 'https://x/a', 1024, {width: 600, height})], ['a.jpeg']);
+		expect(GITHUB_MAX_IMAGE_HEIGHT).toBe(2000);
+		expect(at(2000)).toContain('width="600" height="2000">');
+		expect(at(2001)).toContain('width="600">');
+	});
+
+	it('puts a line break between consecutive parts, always, and nothing else', () => {
+		for (const options of [{}, {imageWidth: 0}, {imageWidth: 300}, {imageWidth: 1000}, {imageHeight: 'none'}, {layout: 'inline'}]) {
+			const body = renderComment(tall, tallFiles, options);
+			expect(count(body, '<br>')).toBe(2);
+			expect(body).toMatch(/><br><img [^>]*><br><img /v);
+			expect(body).not.toMatch(/>\s+<img /v);
+		}
+	});
+
+	it('breaks between N parts N-1 times and not at all for a single image', () => {
+		for (const parts of [2, 5, 11]) {
+			const names = Array.from({length: parts}, (_, index) => `b-part${index + 1}.jpeg`);
+			const body = renderComment(names.map(name => entry(name, `https://x/${name}`, 1024, {width: 1000, height: 9000})), names);
+			expect(count(body, '<br>')).toBe(parts - 1);
+		}
+
 		expect(renderComment([entry('a.jpeg', 'https://x/a', 1024, {width: 300, height: 10})], ['a.jpeg'])).not.toContain('<br>');
+	});
+
+	it('breaks between the parts of every capture of a single accordion, not between captures', () => {
+		const other = tall.map(item => ({...item, fileName: item.fileName.replace('iPad_Pro_11', 'Tab')}));
+		const body = renderComment([...other, ...uploaded], [...other.map(item => item.fileName), ...files], {groupBy: 'all'});
+		expect(count(body, '<br>')).toBe(3);
 	});
 });
 
