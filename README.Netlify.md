@@ -84,7 +84,7 @@ jobs:
 Create a pull request: the workflow starts, waits for Netlify to deploy and
 then takes the screenshots. The [PR comment](README.PR.md) works with this
 trigger as well, add `release-id` and the `GITHUB_TOKEN` env and the
-`contents: write` and `pull-requests: write` permissions.
+`contents: write` and `pull-requests: write` permissions (in addition to `checks: read`).
 
 ## About the two helper actions
 
