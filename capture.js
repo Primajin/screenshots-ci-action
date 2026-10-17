@@ -6,7 +6,7 @@ import {promises as fs} from 'node:fs';
 // - Scroll through the document first so lazily rendered / scroll-reveal
 //   content is on screen (the action never scrolled before).
 // - Taller pages are captured as consecutive `clip` slices that each stay
-//   below `maxImageHeight` output pixels and are written as separate files
+//   below `max-image-height` output pixels and are written as separate files
 //   (-part1, -part2, ...); nothing is stitched, cropped or downscaled. Why:
 //   Chromium documents a 16384 device pixel texture limit that can bite on some
 //   platforms and GPUs (asfand-dev/aktion measured a wrap on its runner; it is
@@ -41,7 +41,7 @@ const SETTLE_MAX_MS = 2000;
 const NETWORK_IDLE_TIMEOUT_MS = 5000;
 
 // Name of the input as users write it, for messages.
-const MAX_IMAGE_HEIGHT_INPUT = 'maxImageHeight';
+const MAX_IMAGE_HEIGHT_INPUT = 'max-image-height';
 
 const FALSE_VALUES = new Set(['false', '0', 'no', 'off']);
 
@@ -54,7 +54,7 @@ const sleep = ms => new Promise(resolve => {
 	setTimeout(resolve, ms);
 });
 
-// Resolve the maxImageHeight input (output pixels per image) to
+// Resolve the max-image-height input (output pixels per image) to
 // {value, warning?}.
 function resolveMaxImageHeight(input) {
 	const raw = String(input ?? '').trim();

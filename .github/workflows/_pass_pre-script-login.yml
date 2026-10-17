@@ -30,8 +30,8 @@ jobs:
           url: http://localhost:8081/
           devices: iPhone 13
           type: png
-          preScriptPath: .github/smoke-fixtures/pre.mjs
-          preScriptTimeout: 30000
+          pre-script-path: .github/smoke-fixtures/pre.mjs
+          pre-script-timeout: 30000
       - name: Assert desktop and device screenshots exist
         run: |
           node .github/scripts/assert-screenshots.mjs --title "Pre-script login" --expect-count 8 --expect-from-name 'desktopPage*' --type png

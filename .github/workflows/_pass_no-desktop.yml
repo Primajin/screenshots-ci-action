@@ -19,7 +19,7 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/
-          noDesktop: true
+          no-desktop: true
           devices: iPhone 13
           type: png
       - name: Assert no desktop files and a viewport sized (not full page) device image

@@ -32,7 +32,7 @@ jobs:
         with:
           url: http://localhost:8080/
           devices: iPhone 13,iPad Pro 11 landscape
-          releaseId: ${{ env.CI_RELEASE_ID }}
+          release-id: ${{ env.CI_RELEASE_ID }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Assert the local screenshots
@@ -82,11 +82,11 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=tall
-          noDesktop: true
+          no-desktop: true
           devices: iPad Pro 11
-          fullPage: true
+          full-page: true
           type: jpeg
-          releaseId: ${{ env.CI_RELEASE_ID }}
+          release-id: ${{ env.CI_RELEASE_ID }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Assert the local parts

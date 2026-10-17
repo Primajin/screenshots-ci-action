@@ -147,7 +147,7 @@
         fmt(lastResource) +
         '\nnetwork idle     : ' +
         (nav && nav.loadEventEnd > 0 ? '>= ' + Math.round(Math.max(nav.loadEventEnd, lastResource) + 500) + ' ms' : 'pending') +
-        '\n(waitUntil: load / domcontentloaded / networkidle decide which of these has passed at capture time)';
+        '\n(wait-until: load / domcontentloaded / networkidle decide which of these has passed at capture time)';
       marks();
     }
 

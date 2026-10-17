@@ -8,59 +8,59 @@ inputs:
   url:
     required: true
     description: "The website URL you want to screenshot. e.x.: https://www.google.com/"
-  noDesktop:
+  no-desktop:
     required: false
     description: "Not screenshot website's desktop viewpoint"
     default: false
   devices:
     required: false
     description: "Screenshot specific mobile devices viewpoint. e.x.: 'iPhone 13' 'Galaxy S III landscape' 'iPad Pro 11 landscape'. Any name from Playwright's device list."
-  fullPage:
+  full-page:
     required: false
     description: "When true, takes a screenshot of the full scrollable page. Defaults to false"
     default: false
-  scrollBeforeCapture:
+  scroll-before-capture:
     required: false
-    description: "Only applies when fullPage is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content is rendered. Default true; false, 0, no and off (any case) switch it off."
+    description: "Only applies when full-page is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content is rendered. Default true; false, 0, no and off (any case) switch it off."
     default: true
-  maxImageHeight:
+  max-image-height:
     required: false
-    description: "Only applies when fullPage is true. Maximum height in OUTPUT pixels (CSS pixels x device scale factor) of one image, 100 to 16000, default and ceiling 16000. A taller page is captured as consecutive parts named <name>-part1, -part2, ... (nothing is stitched, cropped or downscaled); there is no way to get one image above 16000 pixels."
+    description: "Only applies when full-page is true. Maximum height in OUTPUT pixels (CSS pixels x device scale factor) of one image, 100 to 16000, default and ceiling 16000. A taller page is captured as consecutive parts named <name>-part1, -part2, ... (nothing is stitched, cropped or downscaled); there is no way to get one image above 16000 pixels."
     default: '16000'
   type:
     required: false
     description: "Specify screenshot type, can be either jpeg or png. Defaults to 'jpeg'."
     default: 'jpeg'
-  noCommitHashFileName:
+  no-commit-hash-file-name:
     required: false
     description: "Screenshot filename don't include commit hash."
     default: false
-  waitUntil:
+  wait-until:
     required: false
     description: "When to consider navigation succeeded: load, domcontentloaded, networkidle or commit. Legacy Puppeteer values networkidle0 and networkidle2 are mapped to networkidle. Defaults to 'networkidle'."
     default: 'networkidle'
-  waitForSelector:
+  wait-for-selector:
     required: false
     description: "Wait for the selector to be attached to the DOM. Returns immediately if it already exists. If it doesn't appear within the timeout, the error is logged and the screenshot is taken anyway."
     default: ''
-  waitForSelectorHidden:
+  wait-for-selector-hidden:
     required: false
     description: 'Wait for the selected element to not be found in the DOM or to be hidden, i.e. have display: none or visibility: hidden CSS properties.'
-  waitForSelectorVisible:
+  wait-for-selector-visible:
     required: false
     description: 'Wait for the selected element to be present in DOM and to be visible, i.e. to not have display: none or visibility: hidden CSS properties.'
-  waitForSelectorTimeout:
+  wait-for-selector-timeout:
     required: false
     description: 'Maximum time to wait in milliseconds. Pass 0 to disable timeout.'
-  preScriptPath:
+  pre-script-path:
     required: false
     description: "Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving { browser, context, page, url }. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. See README.pre-script.md."
     default: ''
-  preScriptTimeout:
+  pre-script-timeout:
     required: false
     description: "Maximum time in milliseconds the pre-script may run before the action fails. Defaults to 30000."
     default: '30000'
-  releaseId:
+  release-id:
     required: false
     description: "GitHub Release id. Required to upload the screenshots to a PR comment (see README.PR.md)."
     default: ''
@@ -99,18 +99,18 @@ runs:
       shell: bash
       env:
         INPUT_URL: ${{ inputs.url }}
-        INPUT_NODESKTOP: ${{ inputs.noDesktop }}
+        INPUT_NO-DESKTOP: ${{ inputs.no-desktop }}
         INPUT_DEVICES: ${{ inputs.devices }}
-        INPUT_FULLPAGE: ${{ inputs.fullPage }}
-        INPUT_SCROLLBEFORECAPTURE: ${{ inputs.scrollBeforeCapture }}
-        INPUT_MAXIMAGEHEIGHT: ${{ inputs.maxImageHeight }}
+        INPUT_FULL-PAGE: ${{ inputs.full-page }}
+        INPUT_SCROLL-BEFORE-CAPTURE: ${{ inputs.scroll-before-capture }}
+        INPUT_MAX-IMAGE-HEIGHT: ${{ inputs.max-image-height }}
         INPUT_TYPE: ${{ inputs.type }}
-        INPUT_NOCOMMITHASHFILENAME: ${{ inputs.noCommitHashFileName }}
-        INPUT_WAITUNTIL: ${{ inputs.waitUntil }}
-        INPUT_WAITFORSELECTOR: ${{ inputs.waitForSelector }}
-        INPUT_WAITFORSELECTORHIDDEN: ${{ inputs.waitForSelectorHidden }}
-        INPUT_WAITFORSELECTORVISIBLE: ${{ inputs.waitForSelectorVisible }}
-        INPUT_WAITFORSELECTORTIMEOUT: ${{ inputs.waitForSelectorTimeout }}
-        PRE_SCRIPT_PATH: ${{ inputs.preScriptPath }}
-        PRE_SCRIPT_TIMEOUT: ${{ inputs.preScriptTimeout }}
-        INPUT_RELEASEID: ${{ inputs.releaseId }}
+        INPUT_NO-COMMIT-HASH-FILE-NAME: ${{ inputs.no-commit-hash-file-name }}
+        INPUT_WAIT-UNTIL: ${{ inputs.wait-until }}
+        INPUT_WAIT-FOR-SELECTOR: ${{ inputs.wait-for-selector }}
+        INPUT_WAIT-FOR-SELECTOR-HIDDEN: ${{ inputs.wait-for-selector-hidden }}
+        INPUT_WAIT-FOR-SELECTOR-VISIBLE: ${{ inputs.wait-for-selector-visible }}
+        INPUT_WAIT-FOR-SELECTOR-TIMEOUT: ${{ inputs.wait-for-selector-timeout }}
+        PRE_SCRIPT_PATH: ${{ inputs.pre-script-path }}
+        PRE_SCRIPT_TIMEOUT: ${{ inputs.pre-script-timeout }}
+        INPUT_RELEASE-ID: ${{ inputs.release-id }}

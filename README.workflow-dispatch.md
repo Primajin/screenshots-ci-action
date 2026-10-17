@@ -101,7 +101,7 @@ jobs:
       with:
         url: ${{ github.event.inputs.url2 }}
         devices: iPhone 6,iPhone 6 landscape
-        noDesktop: true
+        no-desktop: true
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots

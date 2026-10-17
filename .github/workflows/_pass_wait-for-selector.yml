@@ -19,9 +19,9 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=late
-          fullPage: true
-          waitForSelector: '#late'
-          waitForSelectorVisible: true
+          full-page: true
+          wait-for-selector: '#late'
+          wait-for-selector-visible: true
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait visible" --archive-to artifacts/wait-visible --match 'desktopPage*' --expect-count 7 --min-height 3000
@@ -31,9 +31,9 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=late
-          fullPage: true
-          waitForSelector: '#spinner'
-          waitForSelectorHidden: true
+          full-page: true
+          wait-for-selector: '#spinner'
+          wait-for-selector-hidden: true
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait hidden" --archive-to artifacts/wait-hidden --match 'desktopPage*' --expect-count 7 --min-height 3000
@@ -43,9 +43,9 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=late
-          fullPage: true
-          waitForSelector: '#late'
-          waitForSelectorTimeout: 0
+          full-page: true
+          wait-for-selector: '#late'
+          wait-for-selector-timeout: 0
       - name: Assert the page grew beyond 3000px (the selector was waited for)
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait timeout 0" --archive-to artifacts/wait-timeout-0 --match 'desktopPage*' --expect-count 7 --min-height 3000
@@ -55,12 +55,12 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=late
-          noDesktop: true
+          no-desktop: true
           devices: iPhone 13
-          fullPage: true
-          waitUntil: domcontentloaded
-          waitForSelector: '#late'
-          waitForSelectorTimeout: 300
+          full-page: true
+          wait-until: domcontentloaded
+          wait-for-selector: '#late'
+          wait-for-selector-timeout: 300
       - name: Assert the page was captured before #late appeared
         run: |
           node .github/scripts/assert-screenshots.mjs --title "wait timeout 300 (control)" --archive-to artifacts/wait-timeout-control --expect-count 1 --max-height 3000

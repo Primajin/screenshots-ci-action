@@ -35,21 +35,21 @@ describe('resolveMaxImageHeight', () => {
 		for (const input of ['abc', '0', '-5', '1.5', '4e3x']) {
 			const result = resolveMaxImageHeight(input);
 			expect(result.value).toBe(16_000);
-			expect(result.warning).toContain(`Invalid maxImageHeight "${input}"`);
+			expect(result.warning).toContain(`Invalid max-image-height "${input}"`);
 		}
 	});
 
 	it('clamps values above the ceiling with a warning', () => {
 		const result = resolveMaxImageHeight('99999');
 		expect(result.value).toBe(16_000);
-		expect(result.warning).toContain('maxImageHeight 99999 is above');
+		expect(result.warning).toContain('max-image-height 99999 is above');
 	});
 
 	it('clamps values below the minimum of 100 up with a warning', () => {
 		for (const input of ['1', '99']) {
 			const result = resolveMaxImageHeight(input);
 			expect(result.value).toBe(100);
-			expect(result.warning).toContain(`maxImageHeight ${input} is below`);
+			expect(result.warning).toContain(`max-image-height ${input} is below`);
 		}
 
 		expect(resolveMaxImageHeight('100')).toEqual({value: 100});

@@ -35,7 +35,7 @@ on:
     types: [ opened, synchronize, reopened ]
 ```
 
-Set `releaseId` parameters and `GITHUB_TOKEN` env
+Set `release-id` parameters and `GITHUB_TOKEN` env
 - GitHub automatically creates a unique `GITHUB_TOKEN` secret to use in your workflow.
 - ref: https://docs.github.com/en/actions/security-guides/automatic-token-authentication
 
@@ -44,7 +44,7 @@ Set `releaseId` parameters and `GITHUB_TOKEN` env
   uses: Primajin/screenshots-ci-action@v4
   with:
     url: https://www.google.com/
-    releaseId: 63601424
+    release-id: 63601424
   env:
    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -54,7 +54,7 @@ Set `releaseId` parameters and `GITHUB_TOKEN` env
 - Webhook: `pull_request`
 - target URL: `https://www.google.com/`
 - devices: `iPhone 6,iPhone 6 landscape`
-- releaseId: `63601424`
+- release-id: `63601424`
 - GITHUB_TOKEN: `${{ secrets.GITHUB_TOKEN }}`
 
 ```yaml
@@ -73,7 +73,7 @@ jobs:
       with:
         url: https://www.google.com/
         devices: iPhone 6,iPhone 6 landscape
-        releaseId: 63601424
+        release-id: 63601424
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     - uses: actions/upload-artifact@v7

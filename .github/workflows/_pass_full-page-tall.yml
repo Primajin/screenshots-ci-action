@@ -19,9 +19,9 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=tall
-          noDesktop: true
+          no-desktop: true
           devices: iPad Pro 11
-          fullPage: true
+          full-page: true
           type: png
       - name: Assert 3 parts of at most 16000px that add up to the page
         run: |
@@ -32,10 +32,10 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=tall
-          noDesktop: true
+          no-desktop: true
           devices: iPhone 13
-          fullPage: true
-          maxImageHeight: 4000
+          full-page: true
+          max-image-height: 4000
           type: png
       - name: Assert 16 parts of at most 4000px that add up to the page
         run: |
@@ -46,10 +46,10 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=tall
-          noDesktop: true
+          no-desktop: true
           devices: iPhone 13
-          fullPage: true
-          maxImageHeight: 5000
+          full-page: true
+          max-image-height: 5000
           type: png
       - name: Assert 13 parts of at most 5000px that add up to the page
         run: |
@@ -62,11 +62,11 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/?mode=tall
-          noDesktop: true
+          no-desktop: true
           devices: iPad Pro 11
-          fullPage: true
-          scrollBeforeCapture: false
-          maxImageHeight: 16000
+          full-page: true
+          scroll-before-capture: false
+          max-image-height: 16000
           type: png
       - name: Assert the blank band check FAILS without scrolling (control)
         run: |
@@ -83,14 +83,14 @@ jobs:
         shell: bash
         env:
           INPUT_URL: http://localhost:8080/?mode=tall
-          INPUT_NODESKTOP: true
+          INPUT_NO-DESKTOP: true
           INPUT_DEVICES: iPad Pro 11
-          INPUT_FULLPAGE: true
-          INPUT_MAXIMAGEHEIGHT: 99999
+          INPUT_FULL-PAGE: true
+          INPUT_MAX-IMAGE-HEIGHT: 99999
           INPUT_TYPE: png
         run: |
           node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
-          grep -qF 'maxImageHeight 99999 is above' action.log
+          grep -qF 'max-image-height 99999 is above' action.log
           grep -qF 'capturing 3 consecutive parts' action.log
       - name: Assert the clamped parts stay within 16000px
         run: |

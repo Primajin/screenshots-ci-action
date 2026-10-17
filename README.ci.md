@@ -15,8 +15,8 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-all-defaults` | 7 desktop sizes, jpeg, commit hash in the name, each image has the size from its file name |
 | `pass-devices` | iPhone 13 (1170x1992) and iPad Pro 11 landscape (2388x1668) pixel sizes |
 | `pass-no-desktop` | only the device file exists and it is viewport sized, not full page |
-| `pass-full-page` | `fullPage: true` is taller than the viewport, `false` is exactly the viewport |
-| `pass-full-page-tall` | the 20276px `?mode=tall` page (fullPage) is captured in consecutive parts (3 for an iPad Pro 11 by default, 16 for an iPhone 13 with `maxImageHeight: 4000`, 13 with `5000`; `99999` is clamped and logged): at most the maximum per part, parts add up to the page, no blank 250px bands, distinct parts, and the 4000px and 5000px captures consist of identical pixel rows (no gap or overlap at a seam). A control with `scrollBeforeCapture: false` must fail the blank band check, which tests the input parsing end to end |
+| `pass-full-page` | `full-page: true` is taller than the viewport, `false` is exactly the viewport |
+| `pass-full-page-tall` | the 20276px `?mode=tall` page (full-page) is captured in consecutive parts (3 for an iPad Pro 11 by default, 16 for an iPhone 13 with `max-image-height: 4000`, 13 with `5000`; `99999` is clamped and logged): at most the maximum per part, parts add up to the page, no blank 250px bands, distinct parts, and the 4000px and 5000px captures consist of identical pixel rows (no gap or overlap at a seam). A control with `scroll-before-capture: false` must fail the blank band check, which tests the input parsing end to end |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
@@ -63,7 +63,7 @@ writes a table (file, format, dimensions, size) to the job summary.
 
 ## The CI pre-release
 
-`pass-release-pr-comment` is the only scenario that passes `releaseId`, so the
+`pass-release-pr-comment` is the only scenario that passes `release-id`, so the
 action's own upload path (`uploadReleaseAsset` + PR comment) is exercised for
 real. Every call posts one PR comment, which is why the other scenarios do not
 use it. The release is one long-lived **pre-release** (never marked latest, tag

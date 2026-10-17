@@ -21,8 +21,8 @@ jobs:
         uses: ./
         with:
           url: http://localhost:8080/
-          preScriptPath: .github/smoke-fixtures/pre-slow.mjs
-          preScriptTimeout: 1000
+          pre-script-path: .github/smoke-fixtures/pre-slow.mjs
+          pre-script-timeout: 1000
       - name: Check the step failed
         if: always()
         run: |
