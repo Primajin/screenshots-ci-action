@@ -28,6 +28,24 @@ jobs:
     uses: ./.github/workflows/_lint-pr-title.yml
     secrets: inherit
 
+  fail-missing-pre-script:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_missing-pre-script.yml
+
+  fail-pre-script-error:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_pre-script-error.yml
+
+  fail-pre-script-timeout:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_pre-script-timeout.yml
+
   fail-unknown-device:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -45,6 +63,12 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_devices.yml
+
+  pass-external-login-pre-script:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_external-login-pre-script.yml
 
   pass-full-page:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
@@ -69,6 +93,12 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_no-desktop.yml
+
+  pass-pre-script-login:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_pre-script-login.yml
 
   pass-release-pr-comment:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
@@ -107,13 +137,18 @@ jobs:
     needs:
       - test
       - lint-pr-title
+      - fail-missing-pre-script
+      - fail-pre-script-error
+      - fail-pre-script-timeout
       - fail-unknown-device
       - pass-all-defaults
       - pass-devices
+      - pass-external-login-pre-script
       - pass-full-page
       - pass-full-page-tall
       - pass-no-commit-hash-file-name
       - pass-no-desktop
+      - pass-pre-script-login
       - pass-release-pr-comment
       - pass-type
       - pass-uses-external-url

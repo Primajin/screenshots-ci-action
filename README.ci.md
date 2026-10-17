@@ -24,6 +24,11 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-uses-external-url` | a public site (example.com) |
 | `pass-release-pr-comment` | upload to the CI pre-release and the PR comment with images, also for a tall page in parts (one comment with `part N of M`), see below |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
+| `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
+| `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
+| `fail-pre-script-timeout` | a slow pre-script fails the action with `timed out after 1000 ms` |
+| `fail-pre-script-error` | a throwing pre-script fails with the `Failed to execute pre-script` prefix |
+| `fail-missing-pre-script` | a missing pre-script file fails with the same prefix |
 
 Each scenario uploads its screenshots as a workflow artifact (7 days) and
 writes a table (file, format, dimensions, size) to the job summary.
@@ -50,6 +55,11 @@ writes a table (file, format, dimensions, size) to the job summary.
     until scrolled into view), each labelled with its y offset and striped in
     its own colour, so every 250px band is unique (the full-page-tall scenario
     and the release scenario).
+- `.github/smoke-fixtures/*.mjs` - the pre-scripts of the pre-script scenarios.
+- `.github/smoke-fixtures/login-server.js` - a local login server on port 8081
+  that renders the same shop theme (`demo.css`, `demo.js`): a sign-in form, then
+  a `Signed in as demo-user` banner on `/` only when the session cookie is sent
+  (otherwise a `Signed out` notice). It logs every request with its cookie.
 
 ## The CI pre-release
 

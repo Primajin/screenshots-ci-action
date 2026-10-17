@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildContextOptions,
   buildSelectorWaitOptions,
   findCloseDevices,
   formatInvalidDevicesError,
@@ -145,5 +146,37 @@ describe('buildSelectorWaitOptions', () => {
     for (const timeout of ['', '   ', undefined, null, 'abc', '-5']) {
       expect(buildSelectorWaitOptions({ timeout }).timeout).toBe(30000);
     }
+  });
+});
+
+describe('buildContextOptions', () => {
+  const descriptor = {
+    viewport: { width: 390, height: 664 },
+    userAgent: 'test-agent',
+    isMobile: true,
+  };
+  const storageState = { cookies: [{ name: 'session', value: '1' }] };
+
+  it('merges storageState without overwriting the descriptor', () => {
+    expect(buildContextOptions(descriptor, storageState)).toEqual({
+      ...descriptor,
+      storageState,
+    });
+  });
+
+  it('omits storageState when undefined', () => {
+    const options = buildContextOptions(descriptor, undefined);
+    expect(options).toEqual(descriptor);
+    expect('storageState' in options).toBe(false);
+  });
+
+  it('does not mutate the descriptor', () => {
+    const copy = { ...descriptor };
+    buildContextOptions(descriptor, storageState);
+    expect(descriptor).toEqual(copy);
+  });
+
+  it('works without a descriptor', () => {
+    expect(buildContextOptions(undefined, undefined)).toEqual({});
   });
 });

@@ -52,6 +52,14 @@ inputs:
   waitForSelectorTimeout:
     required: false
     description: 'Maximum time to wait in milliseconds. Pass 0 to disable timeout.'
+  preScriptPath:
+    required: false
+    description: "Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving { browser, context, page, url }. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. See README.pre-script.md."
+    default: ''
+  preScriptTimeout:
+    required: false
+    description: "Maximum time in milliseconds the pre-script may run before the action fails. Defaults to 30000."
+    default: '30000'
   releaseId:
     required: false
     description: "GitHub Release id. Required to upload the screenshots to a PR comment (see README.PR.md)."
@@ -103,4 +111,6 @@ runs:
         INPUT_WAITFORSELECTORHIDDEN: ${{ inputs.waitForSelectorHidden }}
         INPUT_WAITFORSELECTORVISIBLE: ${{ inputs.waitForSelectorVisible }}
         INPUT_WAITFORSELECTORTIMEOUT: ${{ inputs.waitForSelectorTimeout }}
+        PRE_SCRIPT_PATH: ${{ inputs.preScriptPath }}
+        PRE_SCRIPT_TIMEOUT: ${{ inputs.preScriptTimeout }}
         INPUT_RELEASEID: ${{ inputs.releaseId }}

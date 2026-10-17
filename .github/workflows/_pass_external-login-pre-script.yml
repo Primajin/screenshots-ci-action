@@ -1,0 +1,34 @@
+name: "Positive Test - external login pre-script"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - a pre-script logs in on an external login page before capture"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Log in on the public demo, then take screenshots
+        uses: ./
+        with:
+          url: https://primajin.github.io/webapp-console-log-action/login-demo/login/
+          devices: iPhone 13
+          preScriptPath: .github/smoke-fixtures/external-login.mjs
+          preScriptTimeout: 30000
+      - name: Assert desktop and device screenshots exist
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "External login pre-script" --expect-count 8 --expect-from-name 'desktopPage*'
+          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-*' --expect-count 1 --min-height 1900 --max-height 2000
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-external-login-pre-script
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn
