@@ -141,7 +141,7 @@ after the call started, and checks that an image URL is publicly downloadable
 (ranged GET, `image/*` or `application/octet-stream`). The comment must also
 carry the run's short commit sha (in the image URLs) and the head commit (in the
 footer). Because comments are edited in place, the comments of the tags above
-stay on the PR for its whole life, instead of one new comment per push. The
+stay on the PR for its whole life (one comment per tag). The
 job queues per pull request (`concurrency` with `cancel-in-progress: false`:
 one run executes and one waits; a newer run still replaces an older one that is
 waiting, which GitHub then shows as cancelled), because two runs with the same tag
