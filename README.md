@@ -138,22 +138,25 @@ number of parts and the file size:
 <details>
 <summary><b>iPhone 13</b> · 1,170 × 20,276 px · 3 parts · 4.2 MB</summary>
 
-- part 1 of 3: https://github.com/.../iPhone_13-part1-9890851.jpeg
+- [part 1 of 3: open full size](https://github.com/.../iPhone_13-part1-9890851.jpeg)
 ...
 
-<img src="https://github.com/.../iPhone_13-part1-9890851.jpeg" alt="iPhone 13, part 1 of 3" width="600" height="8205"><img ...>
+<img src="https://github.com/.../iPhone_13-part1-9890851.jpeg" alt="iPhone 13, part 1 of 3" width="600"><br><img ...>
 
 </details>
 
 <sub>Commit 9890851 · [workflow run](https://github.com/.../actions/runs/1)</sub>
 ```
 
-Every image carries `width` and `height`, scaled down to at most
-`comment-image-width` CSS pixels (default 600) with the aspect ratio kept, so the
-browser reserves the space before the image arrives. The parts of one capture
-sit directly next to each other and read as one continuous page (parts that
-are shown at 400 pixels or less would sit side by side, so a line break is put
-between them).
+Every image carries a `width` of at most `comment-image-width` CSS pixels
+(default 600) and, with the aspect ratio kept, a `height`, so the browser
+reserves the space before the image arrives. GitHub rewrites an image whose
+height attribute is above 2000: it cuts the height to 2000 and scales the width
+down with it, so a tall part would turn into a narrow strip. Images that would be
+taller than 2000 pixels at the display width (the parts of a tall page) therefore
+get only the `width`; their height is known once they have loaded. The parts of
+one capture always stack, one below the other, with a line break between them and
+no gap, and read as one continuous page.
 
 **Squashed images in narrow windows.** GitHub's CSS caps an image at the width of
 the comment column. In a very narrow window (a phone, a split screen) an image
