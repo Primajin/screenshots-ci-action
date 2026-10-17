@@ -67,6 +67,9 @@ jobs:
             --write-body "$RUNNER_TEMP/comment-first.md" --write-id "$RUNNER_TEMP/comment-id"
           echo "COMMENT_ID=$(cat "$RUNNER_TEMP/comment-id")" >> "$GITHUB_ENV"
           bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-first.md"
+          # GitHub rewrites <img> tags, so check the rendered HTML too
+          gh api "repos/$GH_REPO/issues/comments/$(cat "$RUNNER_TEMP/comment-id")" -H "Accept: application/vnd.github.full+json" --jq .body_html > "$RUNNER_TEMP/comment-first.html"
+          node .github/scripts/assert-rendered-html.mjs --html "$RUNNER_TEMP/comment-first.html" --title "Rendered comment (defaults)" --images "$files" --min-image-width 500
 
       # 2. The same call again: the comment is edited in place, not duplicated
       - name: Take the screenshots again with the same comment tag
@@ -128,10 +131,16 @@ jobs:
           gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
           node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
             --title "PR comment (tall page)" --tag tall --expect-comments 1 --not-id "$COMMENT_ID" \
-            --images "$files" --details-closed --sized-images \
+            --images "$files" --details-closed \
             --contains='part 3 of 3' --contains='3 parts' --contains='### Tall page' --contains="-$sha7." \
-            --write-body "$RUNNER_TEMP/comment-tall.md"
+            --contains='alt="iPad Pro 11, part 1 of 3" width="600">' --contains='alt="iPad Pro 11, part 3 of 3" width="600">' \
+            --not-contains='height="2000"' \
+            --write-body "$RUNNER_TEMP/comment-tall.md" --write-id "$RUNNER_TEMP/comment-tall-id"
           bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-tall.md"
+          # The tall parts must reach the page at the full width and one below the other, not as the
+          # narrow strips GitHub makes of an image with a height above 2000
+          gh api "repos/$GH_REPO/issues/comments/$(cat "$RUNNER_TEMP/comment-tall-id")" -H "Accept: application/vnd.github.full+json" --jq .body_html > "$RUNNER_TEMP/comment-tall.html"
+          node .github/scripts/assert-rendered-html.mjs --html "$RUNNER_TEMP/comment-tall.html" --title "Rendered comment (tall page)" --images "$files" --min-image-width 500 --no-height-attr
           node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
             --title "PR comment (defaults, untouched by the tall call)" --tag screenshots --expect-comments 1 --expect-id "$COMMENT_ID"
 

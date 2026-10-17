@@ -22,7 +22,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
-| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment; a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
+| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
 | `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
 | `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
@@ -46,6 +46,10 @@ writes a table (file, format, dimensions, size) to the job summary.
   `assert-release-assets.sh` (every screenshot is a new release asset) and
   `assert-image-url.sh` (an image URL of the comment is publicly downloadable)
   are small shell helpers next to it.
+- `.github/scripts/assert-rendered-html.mjs` - checks how GitHub renders the
+  comment (the `body_html` from `gh api -H "Accept: application/vnd.github.full+json"`):
+  number of images, a minimum width of every image, no height attribute. Unit
+  tested in `assert-rendered-html.test.js`.
 - `.github/actions/serve-fixtures` - serves `.github/smoke-fixtures/site` on
   `http://localhost:8080/` and waits until it answers.
 - `.github/smoke-fixtures/site` - the "Acme Demo Shop" page every scenario
