@@ -43,8 +43,8 @@ Telegram chat.
 | `devices`(string) | optional(`""`) | Specific mobile devices to generate screenshots. **Use comma(`,`) to separate devices name.** Device name list in below. |
 | `no-desktop`(boolean) | optional(`false`) | Set `true` if not require to get desktop viewpoint screenshots. |
 | `full-page`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
-| `scroll-before-capture`(boolean) | optional(`true`) | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. Set `false` to capture the page as it is. See [Tall pages](#tall-pages). |
-| `max-image-height`(number) | optional(`16000`) | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image, at most `16000`. A taller page is captured in consecutive parts. See [Tall pages](#tall-pages). |
+| `scroll-before-capture`(boolean) | optional(`true`) | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
+| `max-image-height`(number) | optional(`16000`) | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. See [Tall pages](#tall-pages). |
 | `no-commit-hash-file-name`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
 | `type`(string) | optional(`jpeg`) | Specify screenshot type, can be either `jpeg` or `png`. |
 | `wait-until`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
@@ -62,6 +62,51 @@ Telegram chat.
 | `TELE_CHAT_ID`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
 | `TELE_BOT_TOKEN`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
 | `GITHUB_TOKEN`(string) | optional(`""`) | GitHub Actions token, it's required to upload screenshots to PR comment. See [README.PR](/README.PR.md) for more detail |
+
+## Tall pages
+
+With `full-page: true` the action first scrolls through the page, then captures it.
+
+**Lazy content.** Long pages often look half empty in a full page capture:
+lazy-loaded images and scroll-reveal (IntersectionObserver) sections only render
+once they have been scrolled into view, and a capture never scrolled. Before a
+full page capture the action therefore scrolls through the document in
+viewport-sized steps (at most 15 seconds and 150 steps, so infinite-scroll pages
+stop), goes back to the top and waits for the page height to settle. Turn this
+off with `scroll-before-capture: false` (accepted off values: `false`, `0`, `no`, `off`).
+
+**Parts.** A page whose output height (CSS pixels x device scale factor) is
+above `max-image-height` is captured as consecutive parts that together cover the page
+exactly, without gaps, overlap, cropping or downscaling. `max-image-height` counts
+**output pixels** and is between `100` and `16000` (default and ceiling
+`16000`); other values are clamped with a warning, and invalid values fall back
+to the default. Why a ceiling at all:
+
+- Chromium documents a 16,384 device pixel texture limit that can bite on some
+  platforms and GPUs ([asfand-dev/aktion](https://github.com/asfand-dev/aktion)
+  measured a wrap on its runner; it does not reproduce everywhere).
+- GitHub's image proxy refuses comment images over 5 MB.
+- JPEG cannot be taller than 65,535 pixels.
+- One huge bitmap costs a lot of memory.
+
+- **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
+  extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
+  usual single image and name.
+- **PR comment:** the parts of one capture are listed under one heading with
+  their total size (`part N of M`, and which parts failed to upload), and the
+  images sit directly next to each other.
+- **Size guard (JPEG parts):** a JPEG part above about 4.8 MB is captured again
+  with a lower quality (80, 70, 60, 50, 40). A PNG part over 5 MB only logs a
+  warning.
+
+**Behaviour change.** Pages taller than `max-image-height` (default `16000` output pixels)
+now produce `-partN` files instead of one file. `16000` is the ceiling, so
+there is no way to get one huge file: a single image that tall hits the limits
+above. Lower `max-image-height` for more, smaller parts.
+
+Note: another way to render everything is to resize the viewport to the height
+of the page before the capture (as aktion does). This action does not, because
+it changes the layout of everything sized in `vh`.
 
 ## Output screenshots
 There are **3** different way to output files
@@ -388,36 +433,6 @@ npm run lint        # xo (npm run lint:fix to auto-fix)
 npm test            # unit tests
 npm run coverage    # unit tests with coverage
 ```
-
-## Tall pages
-
-Chromium cannot capture more than 16,384 device pixels in one screenshot:
-beyond that a capture wraps and repeats the top of the page. With `full-page: true`
-a page whose output height (CSS pixels x device scale factor) is above
-`max-image-height` (default and maximum `16000`) is therefore captured as
-consecutive parts that together cover the page exactly, without gaps, overlap,
-cropping or downscaling. Larger values are clamped to `16000` with a warning;
-invalid values fall back to the default.
-
-- **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
-  extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
-  usual single image and name.
-- **PR comment:** the parts of one capture are listed under one heading with
-  their total size (`part N of M`), and the images sit directly next to each
-  other so they read as one continuous page.
-- **Size guard:** GitHub's image proxy refuses images over 5 MB in comments. A
-  JPEG part above about 4.8 MB is captured again with a lower quality (80, 70,
-  60, 50, 40); a PNG part over 5 MB only logs a warning.
-- **Lazy content:** before a full page capture the action scrolls through the
-  document in viewport-sized steps (at most 15 seconds and 150 steps, so
-  infinite-scroll pages stop), goes back to the top and waits for the page
-  height to settle, so lazy images and scroll-reveal sections are rendered. Turn
-  it off with `scroll-before-capture: false`.
-
-Note: another way to render everything is to resize the viewport to the height
-of the page before the capture (as
-[asfand-dev/aktion](https://github.com/asfand-dev/aktion) does). This action
-does not, because it changes the layout of everything sized in `vh`.
 
 ## Result examples
 ### desktop (600x450)

@@ -53,12 +53,17 @@ function renderGroup(entries, total) {
 	const size = formatBytes(entries.reduce((sum, entry) => sum + entry.bytes, 0));
 	const heading = first.name.replace(PART_IN_NAME, '');
 	const lines = entries.map(entry => `- part ${entry.part} of ${total}: ${entry.url}`);
+	const missing = Array.from({length: total}, (_, index) => index + 1)
+		.filter(part => entries.every(entry => entry.part !== part));
+	const failed = missing.length > 0
+		? ` (part${missing.length > 1 ? 's' : ''} ${missing.join(', ')} failed to upload)`
+		: '';
 	const images = entries
 		.map(entry => `<img src=${entry.url} alt="part ${entry.part} of ${total}" />`)
 		.join('');
 	return {
 		key: first.url,
-		text: `## ${heading} (${total} parts, ${size} total)\n${lines.join('\n')}\n\n${images}\n\n`,
+		text: `## ${heading} (${total} parts, ${size} total)${failed}\n${lines.join('\n')}\n\n${images}\n\n`,
 	};
 }
 

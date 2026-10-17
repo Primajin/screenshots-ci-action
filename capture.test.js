@@ -12,6 +12,7 @@ import {
 import {
 	captureJpegWithinLimit,
 	cssGranule,
+	isScrollEnabled,
 	nextScrollOffset,
 	partSuffix,
 	planSlices,
@@ -38,10 +39,43 @@ describe('resolveMaxImageHeight', () => {
 		}
 	});
 
-	it('clamps values above the Chromium limit with a warning', () => {
+	it('clamps values above the ceiling with a warning', () => {
 		const result = resolveMaxImageHeight('99999');
 		expect(result.value).toBe(16_000);
-		expect(result.warning).toContain('max-image-height 99999');
+		expect(result.warning).toContain('max-image-height 99999 is above');
+	});
+
+	it('clamps values below the minimum of 100 up with a warning', () => {
+		for (const input of ['1', '99']) {
+			const result = resolveMaxImageHeight(input);
+			expect(result.value).toBe(100);
+			expect(result.warning).toContain(`max-image-height ${input} is below`);
+		}
+
+		expect(resolveMaxImageHeight('100')).toEqual({value: 100});
+	});
+});
+
+describe('isScrollEnabled', () => {
+	it('is on by default and for anything but the off values', () => {
+		for (const input of [
+			undefined,
+			null,
+			'',
+			'true',
+			'TRUE',
+			'yes',
+			'1',
+			'x',
+		]) {
+			expect(isScrollEnabled(input)).toBe(true);
+		}
+	});
+
+	it('is switched off by false, 0, no and off in any case', () => {
+		for (const input of ['false', 'False', ' 0 ', 'no', 'NO', 'off', false]) {
+			expect(isScrollEnabled(input)).toBe(false);
+		}
 	});
 });
 
@@ -130,6 +164,19 @@ describe('planSlices', () => {
 					}
 				}
 			}
+		}
+	});
+
+	it('raises a maximum below the device scale factor to one CSS pixel', () => {
+		// 1 CSS px is 3 output px at 3x, so a maximum of 1 or 2 cannot be honoured
+		for (const max of [1, 2]) {
+			const slices = planSlices(4, 3, max);
+			expect(slices).toEqual([
+				{y: 0, height: 1},
+				{y: 1, height: 1},
+				{y: 2, height: 1},
+				{y: 3, height: 1},
+			]);
 		}
 	});
 
@@ -289,6 +336,23 @@ describe('takeScreenshot', () => {
 		expect(page.shots[0]).toMatchObject({type: 'jpeg', quality: 80});
 		expect(files.every(file => fs.existsSync(file))).toBe(true);
 		expect(logs.join('\n')).toContain('capturing 2 consecutive parts');
+	});
+
+	it('warns when a very small maxImageHeight produces many parts', async () => {
+		const page = fakePage({height: 20_276});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			fullPage: true,
+			maxImageHeight: 100,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(files).toHaveLength(203);
+		expect(
+			logs.some(message => message.startsWith('Warning: 203 parts')),
+		).toBe(true);
 	});
 
 	it('honours a smaller maxImageHeight and the device scale factor', async () => {

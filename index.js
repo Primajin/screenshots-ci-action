@@ -8,7 +8,7 @@ import * as github from '@actions/github';
 import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
-import {resolveMaxImageHeight, takeScreenshot} from './capture.js';
+import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
 import {renderCommentBody} from './comment.js';
 import {
 	buildContextOptions,
@@ -67,8 +67,7 @@ async function run() {
 		const isNoDesktop = core.getInput('no-desktop') === 'true';
 		const isFullPage = core.getInput('full-page') === 'true';
 		// Only matters for full page captures; on unless explicitly switched off.
-		const isScrollBeforeCapture
-			= core.getInput('scroll-before-capture').toLowerCase() !== 'false';
+		const isScrollBeforeCapture = isScrollEnabled(core.getInput('scroll-before-capture'));
 		const maxImage = resolveMaxImageHeight(core.getInput('max-image-height'));
 		if (maxImage.warning) {
 			console.warn(maxImage.warning);

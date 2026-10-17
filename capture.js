@@ -5,19 +5,29 @@ import {promises as fs} from 'node:fs';
 //
 // - Scroll through the document first so lazily rendered / scroll-reveal
 //   content is on screen (the action never scrolled before).
-// - Chromium cannot capture more than 16384 device pixels in one screenshot;
-//   beyond that a capture wraps and repeats the top of the page. Taller pages
-//   are therefore captured as consecutive `clip` slices that each stay below
-//   `max-image-height` and are written as separate files (-part1, -part2, ...).
-// - JPEG slices are kept under the 5 MB limit of GitHub's image proxy by
-//   stepping the quality down.
+// - Taller pages are captured as consecutive `clip` slices that each stay
+//   below `max-image-height` output pixels and are written as separate files
+//   (-part1, -part2, ...); nothing is stitched, cropped or downscaled. Why:
+//   Chromium documents a 16384 device pixel texture limit that can bite on some
+//   platforms and GPUs (asfand-dev/aktion measured a wrap on its runner; it is
+//   not reproducible everywhere), GitHub's image proxy refuses comment images
+//   over 5 MB, JPEG cannot exceed 65535 pixels per side, and one huge bitmap
+//   costs a lot of memory.
+// - JPEG slices are kept under the 5 MB limit by stepping the quality down.
+// - The blank regions seen in long full page captures come from lazy and
+//   scroll-reveal content that was never scrolled into view; scrolling first
+//   fixes that.
 //
 // Everything that does not need a browser is a pure function so it can be unit
 // tested.
 
-// Chromium's single capture limit is 16384 device px; stay below it.
+// Chromium's texture limit is 16384 device px; stay below it. This is also the
+// ceiling for the max image height and its default.
 const HARD_MAX_IMAGE_HEIGHT = 16_000;
 const DEFAULT_MAX_IMAGE_HEIGHT = HARD_MAX_IMAGE_HEIGHT;
+// Smaller values would only produce hundreds of files.
+const MIN_MAX_IMAGE_HEIGHT = 100;
+const WARN_PART_COUNT = 200;
 // GitHub's camo proxy refuses comment images over 5 MB.
 const MAX_IMAGE_BYTES = 4.8 * 1024 * 1024;
 const PNG_WARN_BYTES = 5 * 1024 * 1024;
@@ -33,11 +43,18 @@ const NETWORK_IDLE_TIMEOUT_MS = 5000;
 // Name of the input as users write it, for messages.
 const MAX_IMAGE_HEIGHT_INPUT = 'max-image-height';
 
+const FALSE_VALUES = new Set(['false', '0', 'no', 'off']);
+
+// The scroll input is on by default: only these values switch it off.
+function isScrollEnabled(input) {
+	return !FALSE_VALUES.has(String(input ?? '').trim().toLowerCase());
+}
+
 const sleep = ms => new Promise(resolve => {
 	setTimeout(resolve, ms);
 });
 
-// Resolve the maxImageHeight input (output pixels per image) to
+// Resolve the max-image-height input (output pixels per image) to
 // {value, warning?}.
 function resolveMaxImageHeight(input) {
 	const raw = String(input ?? '').trim();
@@ -56,7 +73,14 @@ function resolveMaxImageHeight(input) {
 	if (parsed > HARD_MAX_IMAGE_HEIGHT) {
 		return {
 			value: HARD_MAX_IMAGE_HEIGHT,
-			warning: `${MAX_IMAGE_HEIGHT_INPUT} ${parsed} is above Chromium's capture limit, using ${HARD_MAX_IMAGE_HEIGHT}.`,
+			warning: `${MAX_IMAGE_HEIGHT_INPUT} ${parsed} is above the ceiling of ${HARD_MAX_IMAGE_HEIGHT} output pixels, using ${HARD_MAX_IMAGE_HEIGHT}.`,
+		};
+	}
+
+	if (parsed < MIN_MAX_IMAGE_HEIGHT) {
+		return {
+			value: MIN_MAX_IMAGE_HEIGHT,
+			warning: `${MAX_IMAGE_HEIGHT_INPUT} ${parsed} is below the minimum of ${MIN_MAX_IMAGE_HEIGHT} output pixels, using ${MIN_MAX_IMAGE_HEIGHT}.`,
 		};
 	}
 
@@ -94,7 +118,9 @@ function cssGranule(deviceScaleFactor) {
 // maxImageHeight device pixels. A document that fits yields one slice. Returns
 // {y, height}[] in CSS pixels, covering the whole document without gaps or
 // overlap; only the last slice may be shorter.
-function planSlices(documentHeight, deviceScaleFactor, maxImageHeight) {
+function planSlices(documentHeight, deviceScaleFactor, requestedMaxHeight) {
+	// A slice is at least one CSS pixel, that is ceil(dpr) output pixels.
+	const maxImageHeight = Math.max(requestedMaxHeight, Math.ceil(deviceScaleFactor));
 	if (Math.ceil(documentHeight * deviceScaleFactor) <= maxImageHeight) {
 		return [{y: 0, height: documentHeight}];
 	}
@@ -137,8 +163,15 @@ async function captureJpegWithinLimit(capture, maxBytes) {
 
 const measureDocument = page =>
 	page.evaluate(() => ({
-		height: document.documentElement.scrollHeight,
-		width: document.documentElement.scrollWidth,
+		height: Math.max(
+			document.documentElement.scrollHeight,
+			document.body ? document.body.scrollHeight : 0,
+		),
+		width: Math.max(
+			document.documentElement.scrollWidth,
+			document.body ? document.body.scrollWidth : 0,
+			document.documentElement.clientWidth,
+		),
 		viewportHeight: window.innerHeight,
 		deviceScaleFactor: window.devicePixelRatio || 1,
 	}));
@@ -159,7 +192,8 @@ async function prepareFullPage(page, options) {
 	let steps = 0;
 	/* eslint-disable no-await-in-loop -- scrolling is inherently sequential */
 	while (offset !== null && steps < maxSteps && Date.now() - started < maxMs) {
-		await page.evaluate(top => window.scrollTo(0, top), offset);
+		// Behavior 'instant' beats smooth-scroll CSS
+		await page.evaluate(top => window.scrollTo({top, behavior: 'instant'}), offset);
 		await sleep(stepWaitMs);
 		steps++;
 		// The document may grow while scrolling (infinite scroll): re-measure.
@@ -175,7 +209,7 @@ async function prepareFullPage(page, options) {
 		);
 	}
 
-	await page.evaluate(() => window.scrollTo(0, 0));
+	await page.evaluate(() => window.scrollTo({top: 0, behavior: 'instant'}));
 
 	if (waitUntil === 'networkidle') {
 		await page
@@ -234,6 +268,12 @@ async function takeScreenshot(page, options) {
 			slices.length
 		} consecutive parts.`,
 	);
+	if (slices.length > WARN_PART_COUNT) {
+		log(
+			`Warning: ${slices.length} parts will be written, consider a larger ${MAX_IMAGE_HEIGHT_INPUT}.`,
+		);
+	}
+
 	const files = [];
 	/* eslint-disable no-await-in-loop -- slices are captured one after another */
 	for (let index = 0; index < slices.length; index++) {
@@ -288,8 +328,11 @@ export {
 	HARD_MAX_IMAGE_HEIGHT,
 	JPEG_QUALITY_STEPS,
 	MAX_IMAGE_BYTES,
+	MIN_MAX_IMAGE_HEIGHT,
+	WARN_PART_COUNT,
 	captureJpegWithinLimit,
 	cssGranule,
+	isScrollEnabled,
 	nextScrollOffset,
 	partSuffix,
 	planSlices,
