@@ -4,7 +4,9 @@ import {commentMarker} from './comment.js';
 import {
 	findPreviousComment,
 	publishComment,
+	isOwnComment,
 	resolveAuthors,
+	shouldUpload,
 	startsWithMarker,
 } from './pr-comment.js';
 
@@ -13,7 +15,8 @@ const BOT = 'github-actions[bot]';
 
 // A fake octokit that keeps the comments of one issue in memory (paginate hands
 // back all of them, like the real one after following the pages);
-// `authenticated` is the login of the token (undefined: getAuthenticated is forbidden, like for a GITHUB_TOKEN).
+// `authenticated` is the login of the token (undefined: getAuthenticated is forbidden,
+// like for a GITHUB_TOKEN or an App installation token); `failUpdate` the status of a failing edit.
 function fakeOctokit({comments = [], authenticated, failUpdate} = {}) {
 	const state = {comments: [...comments], calls: [], nextId: 1000};
 	const listComments = {name: 'listComments'};
@@ -45,7 +48,8 @@ function fakeOctokit({comments = [], authenticated, failUpdate} = {}) {
 				async updateComment(parameters) {
 					state.calls.push(['update', parameters]);
 					if (failUpdate) {
-						throw new Error('Not Found');
+						// FailUpdate is the HTTP status the API answers with
+						throw Object.assign(new Error(failUpdate === 404 ? 'Not Found' : 'Forbidden'), {status: failUpdate});
 					}
 
 					const comment = state.comments.find(item => item.id === parameters.comment_id);
@@ -57,7 +61,7 @@ function fakeOctokit({comments = [], authenticated, failUpdate} = {}) {
 	};
 }
 
-const comment = (id, body, login = BOT) => ({id, body, user: {login}});
+const comment = (id, body, login = BOT, type = 'User') => ({id, body, user: {login, type}});
 const target = {owner: 'o', repo: 'r', issueNumber: 7};
 
 describe('startsWithMarker', () => {
@@ -83,7 +87,7 @@ describe('resolveAuthors', () => {
 		expect(await resolveAuthors(fakeOctokit())).toEqual([BOT]);
 	});
 
-	it('adds the owner of a personal access token or app token', async () => {
+	it('adds the owner of a personal access token', async () => {
 		expect(await resolveAuthors(fakeOctokit({authenticated: 'jannis'}))).toEqual([BOT, 'jannis']);
 		expect(await resolveAuthors(fakeOctokit({authenticated: BOT}))).toEqual([BOT]);
 	});
@@ -125,9 +129,19 @@ describe('findPreviousComment', () => {
 		expect(await findPreviousComment(onlyForeign, {...target, marker, authors: ['mallory']})).toMatchObject({id: 1});
 	});
 
-	it('takes the first of several matches', async () => {
-		const octokit = fakeOctokit({comments: [comment(3, `${marker}\na`), comment(9, `${marker}\nb`)]});
-		expect(await findPreviousComment(octokit, {...target, marker})).toMatchObject({id: 3});
+	it('takes the newest of several matches', async () => {
+		const octokit = fakeOctokit({comments: [comment(3, `${marker}\na`), comment(9, `${marker}\nb`), comment(12, 'later, unrelated')]});
+		expect(await findPreviousComment(octokit, {...target, marker})).toMatchObject({id: 9});
+	});
+
+	it('recognises the comments of a GitHub App by the author type, since its login is unknown', async () => {
+		const octokit = fakeOctokit({
+			comments: [comment(1, `${marker}\napp`, 'my-app[bot]', 'Bot'), comment(2, `${marker}\nhuman`, 'mallory', 'User')],
+		});
+		expect(await findPreviousComment(octokit, {...target, marker})).toMatchObject({id: 1});
+		// ... but only with the marker
+		const noMarker = fakeOctokit({comments: [comment(1, 'plain', 'my-app[bot]', 'Bot')]});
+		expect(await findPreviousComment(noMarker, {...target, marker})).toBeUndefined();
 	});
 
 	it('copes with comments of deleted users', async () => {
@@ -204,8 +218,8 @@ describe('publishComment', () => {
 		expect(octokit.state.calls.map(call => call[0])).toEqual(['create']);
 	});
 
-	it('posts a new comment when the earlier one cannot be edited', async () => {
-		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`)], failUpdate: true});
+	it('posts a new comment when the earlier one is gone (404)', async () => {
+		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`)], failUpdate: 404});
 		const messages = [];
 		const result = await publishComment(octokit, {
 			...target, body, marker, mode: 'update', log(message) {
@@ -213,7 +227,25 @@ describe('publishComment', () => {
 			},
 		});
 		expect(result.action).toBe('created');
-		expect(messages).toEqual(['Could not update comment 2 (Not Found); posting a new comment.']);
+		expect(messages).toEqual(['Comment 2 no longer exists (Not Found); posting a new comment.']);
+	});
+
+	it('passes on any other failure of the edit instead of adding a duplicate', async () => {
+		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`)], failUpdate: 403});
+		await expect(publishComment(octokit, {
+			...target, body, marker, mode: 'update',
+		})).rejects.toThrow('Forbidden');
+		expect(octokit.state.comments).toHaveLength(1);
+		expect(octokit.state.calls.map(call => call[0])).not.toContain('create');
+	});
+
+	it('keeps editing the newest comment when an old duplicate exists', async () => {
+		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`), comment(5, `${marker}\nnewer`)]});
+		const result = await publishComment(octokit, {
+			...target, body, marker, mode: 'update',
+		});
+		expect(result).toEqual({action: 'updated', id: 5});
+		expect(octokit.state.comments[0].body).toBe(`${marker}\nold`);
 	});
 
 	it('edits a comment of the token owner too', async () => {
@@ -222,5 +254,48 @@ describe('publishComment', () => {
 			...target, body, marker, mode: 'update',
 		});
 		expect(result).toEqual({action: 'updated', id: 4});
+	});
+});
+
+describe('isOwnComment', () => {
+	it('needs the marker and a known login or a bot', () => {
+		expect(isOwnComment(comment(1, `${marker}\nx`), marker, [BOT])).toBe(true);
+		expect(isOwnComment(comment(1, `${marker}\nx`, 'jannis'), marker, [BOT, 'jannis'])).toBe(true);
+		expect(isOwnComment(comment(1, `${marker}\nx`, 'jannis'), marker, [BOT])).toBe(false);
+		expect(isOwnComment(comment(1, `${marker}\nx`, 'other[bot]', 'Bot'), marker, [BOT])).toBe(true);
+		expect(isOwnComment(comment(1, 'x', BOT, 'Bot'), marker, [BOT])).toBe(false);
+	});
+});
+
+describe('shouldUpload', () => {
+	const ready = {
+		owner: 'o', repo: 'r', releaseId: '1', token: 't', pullRequest: {number: 7}, comment: true,
+	};
+
+	it('uploads on a pull request with a release and a token', () => {
+		expect(shouldUpload(ready)).toEqual({upload: true});
+	});
+
+	it('does not upload on a push when a comment is wanted', () => {
+		expect(shouldUpload({...ready, pullRequest: undefined})).toEqual({upload: false});
+	});
+
+	it('still uploads on a push with comment: false', () => {
+		expect(shouldUpload({...ready, pullRequest: undefined, comment: false})).toEqual({upload: true});
+		expect(shouldUpload({...ready, comment: false})).toEqual({upload: true});
+	});
+
+	it('needs the repository, the release and the token', () => {
+		expect(shouldUpload({...ready, owner: ''})).toEqual({upload: false});
+		expect(shouldUpload({...ready, repo: undefined})).toEqual({upload: false});
+		expect(shouldUpload({...ready, token: undefined, comment: false})).toEqual({upload: false});
+		expect(shouldUpload({...ready, releaseId: '', comment: false})).toEqual({upload: false});
+	});
+
+	it('says why nothing is posted when a comment is wanted but there is no release id', () => {
+		const result = shouldUpload({...ready, releaseId: ''});
+		expect(result.upload).toBe(false);
+		expect(result.notice).toContain('release-id');
+		expect(shouldUpload({...ready, releaseId: '', pullRequest: undefined}).notice).toBeUndefined();
 	});
 });

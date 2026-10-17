@@ -12,7 +12,10 @@ function startsWithMarker(body, marker) {
 }
 
 // Logins whose comments may be edited: the default Actions bot, plus the owner
-// of the token when it can be asked (a GITHUB_TOKEN cannot, so that is silent).
+// of the token when it can be asked. A GITHUB_TOKEN and a GitHub App
+// installation token cannot (GET /user answers 403, which is swallowed), so
+// the comments of an App are recognised by their author type instead, see
+// isOwnComment.
 async function resolveAuthors(octokit) {
 	const authors = [DEFAULT_BOT];
 	try {
@@ -25,11 +28,19 @@ async function resolveAuthors(octokit) {
 	return authors;
 }
 
+// A comment the action may have written: by a known login, or by any bot (an
+// App token posts as "<app>[bot]", which cannot be looked up beforehand). It
+// must carry the marker as well.
+function isOwnComment(comment, marker, authors) {
+	return startsWithMarker(comment.body, marker)
+		&& (authors.includes(comment.user?.login) || comment.user?.type === 'Bot');
+}
+
 /**
  Find the action's earlier comment on a pull request.
  @param {object} octokit An authenticated octokit.
  @param {{owner: string, repo: string, issueNumber: number, marker: string, authors?: string[]}} options Where to look and what to look for.
- @returns {Promise<{id: number} | undefined>} The first comment written by an allowed author whose body starts with the marker.
+ @returns {Promise<{id: number} | undefined>} The newest comment written by an allowed author (or a bot) whose body starts with the marker.
  */
 async function findPreviousComment(octokit, {owner, repo, issueNumber, marker, authors = [DEFAULT_BOT]}) {
 	const comments = await octokit.paginate(octokit.rest.issues.listComments, {
@@ -38,10 +49,9 @@ async function findPreviousComment(octokit, {owner, repo, issueNumber, marker, a
 		issue_number: issueNumber,
 		per_page: 100,
 	});
-	return comments.find(comment =>
-		startsWithMarker(comment.body, marker)
-		&& authors.includes(comment.user?.login),
-	);
+	// The newest one: when an old duplicate cannot be edited, the next run
+	// still finds the comment that was posted last instead of adding more.
+	return comments.findLast(comment => isOwnComment(comment, marker, authors));
 }
 
 /**
@@ -69,8 +79,14 @@ async function publishComment(octokit, {owner, repo, issueNumber, body, marker, 
 				});
 				return {action: 'updated', id: data?.id ?? previous.id};
 			} catch (error) {
-				// Deleted in the meantime or not editable: a new comment beats none
-				log(`Could not update comment ${previous.id} (${error.message}); posting a new comment.`);
+				// Only a comment that is gone (404) is replaced. Anything else (no
+				// permission, rate limit, server error) would post a duplicate on
+				// every run, so it is passed on.
+				if (error.status !== 404) {
+					throw error;
+				}
+
+				log(`Comment ${previous.id} no longer exists (${error.message}); posting a new comment.`);
 			}
 		}
 	}
@@ -84,6 +100,27 @@ async function publishComment(octokit, {owner, repo, issueNumber, body, marker, 
 	return {action: 'created', id: data?.id};
 }
 
+/**
+ Decide whether to upload the screenshots to the release, and say why not.
+ Uploading needs the repository, a release and a token. Without a pull request
+ there is nothing to comment on, so the upload only happens when no comment was
+ asked for (`comment: false`, e.g. a push workflow).
+ @param {{owner?: string, repo?: string, releaseId?: string, token?: string, pullRequest?: object, comment: boolean}} context What the run knows.
+ @returns {{upload: boolean, notice?: string}} The decision and, when the user might expect a comment, a notice.
+ */
+function shouldUpload({owner, repo, releaseId, token, pullRequest, comment}) {
+	if (!owner || !repo || !token) {
+		return {upload: false};
+	}
+
+	if (!releaseId) {
+		const notice = 'Nothing was uploaded or posted to the pull request: set "release-id" to post the screenshots (see README.PR.md).';
+		return {upload: false, notice: comment && pullRequest ? notice : undefined};
+	}
+
+	return {upload: Boolean(pullRequest) || !comment};
+}
+
 export {
-	findPreviousComment, publishComment, resolveAuthors, startsWithMarker,
+	findPreviousComment, isOwnComment, publishComment, resolveAuthors, shouldUpload, startsWithMarker,
 };
