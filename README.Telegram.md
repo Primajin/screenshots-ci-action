@@ -26,9 +26,12 @@ workflow file (Settings > Secrets and variables > Actions, see
 - the group, channel or user id as `TELE_CHAT_ID`
 - the bot token as `TELE_BOT_TOKEN`
 
-![The repository settings, Secrets and variables, Actions](./asset/secret2.jpg)
-![The new repository secret form](./asset/secret1.jpg)
-![The secrets TELE_CHAT_ID and TELE_BOT_TOKEN in the list](./asset/secret3.jpg)
+![The New secret form for TELE_CHAT_ID](./asset/secret2.jpg)
+![The New secret form for TELE_BOT_TOKEN](./asset/secret1.jpg)
+![The secrets TELE_BOT_TOKEN and TELE_CHAT_ID in the list of secrets](./asset/secret3.jpg)
+
+(These three images show an older version of GitHub's secrets pages, but the
+fields are the same: a name and a value.)
 
 ## 2. Pass them to the action
 
@@ -86,8 +89,8 @@ multipart upload). There is no Telegram library and no extra dependency.
 - An album needs 2 to 10 items. If a single file would be left over (11 files
   would be 10 + 1), it takes one file from the previous album: 11 files are
   sent as 9 + 2, 21 files as 10 + 9 + 2.
-- Every photo has its **file name as the caption**, so you can tell the
-  desktop sizes and devices apart.
+- Photos in an **album** have their **file name as the caption**, so you can
+  tell the desktop sizes and devices apart. A single photo has no caption.
 - Messages are sent **silently** (`disable_notification`).
 - The action writes `.jpeg` (default) or `.png` files (`type` input) and sends
   them as photos. Telegram recompresses photos, so the images in the chat look
