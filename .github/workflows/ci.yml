@@ -28,12 +28,97 @@ jobs:
     uses: ./.github/workflows/_lint-pr-title.yml
     secrets: inherit
 
+  fail-unknown-device:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_unknown-device.yml
+
+  pass-all-defaults:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_all-defaults.yml
+
+  pass-devices:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_devices.yml
+
+  pass-full-page:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_full-page.yml
+
+  pass-full-page-tall:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_full-page-tall.yml
+
+  pass-no-commit-hash-file-name:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_no-commit-hash-file-name.yml
+
+  pass-no-desktop:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_no-desktop.yml
+
+  pass-release-pr-comment:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/_pass_release-pr-comment.yml
+
+  pass-type:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_type.yml
+
+  pass-uses-external-url:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_uses-external-url.yml
+
+  pass-wait-for-selector:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_wait-for-selector.yml
+
+  pass-wait-until:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_wait-until.yml
+
   all-green:
     name: All checks green
     if: always()
     needs:
       - test
       - lint-pr-title
+      - fail-unknown-device
+      - pass-all-defaults
+      - pass-devices
+      - pass-full-page
+      - pass-full-page-tall
+      - pass-no-commit-hash-file-name
+      - pass-no-desktop
+      - pass-release-pr-comment
+      - pass-type
+      - pass-uses-external-url
+      - pass-wait-for-selector
+      - pass-wait-until
     runs-on: ubuntu-latest
     permissions: {}
     steps:

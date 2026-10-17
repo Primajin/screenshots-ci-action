@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Wait for Pages changed to neutral
-      uses: fountainhead/action-wait-for-check@v1.0.0
+      uses: fountainhead/action-wait-for-check@v1.2.0
       id: wait-for-Netlify
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
@@ -63,16 +63,12 @@ jobs:
       id: waitFor200
       with:
         site_name: netlify_SITE_NAME
-    - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ steps.waitFor200.outputs.url }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
@@ -106,7 +102,7 @@ jobs:
         id: waitFor200
         with:
           site_name: netlify_SITE_NAME
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     ...
        with:
          url: ${{ steps.waitFor200.outputs.url }}

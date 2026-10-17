@@ -64,3 +64,8 @@ typings/
 
 # next.js build output
 .next
+
+# CI scenario scratch output
+artifacts/
+action.log
+control.log

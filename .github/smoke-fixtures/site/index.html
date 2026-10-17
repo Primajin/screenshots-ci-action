@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acme Demo Shop</title>
+  <link rel="stylesheet" href="demo.css">
+</head>
+<body>
+  <div id="page">
+    <div id="ruler" aria-hidden="true"></div>
+
+    <header class="probe">
+      <b>Acme Demo Shop</b>
+      <span id="probe-size">measuring...</span>
+      <span id="bp" class="badge"></span>
+      <small id="probe-css"></small>
+    </header>
+
+    <nav>
+      <a href="#">Acme</a>
+      <a href="#">Shop</a>
+      <a href="#">Deals</a>
+      <a href="#">Support</a>
+      <a href="#">Cart (0)</a>
+    </nav>
+
+    <main>
+      <div class="demo-content">
+        <section class="hero">
+          <h1>Everything you need, nothing you do not.</h1>
+          <p>A fake storefront used by the screenshots-ci-action scenarios. The header band, the ruler on the left and the footer tell you what was captured.</p>
+          <a href="#">Browse the collection</a>
+        </section>
+
+        <section class="cards">
+          <article class="card"><i style="background:#bfdbfe"></i><h3>Acme Widget 1</h3><p>$12.00</p></article>
+          <article class="card"><i style="background:#fbcfe8"></i><h3>Acme Widget 2</h3><p>$18.50</p></article>
+          <article class="card"><i style="background:#bbf7d0"></i><h3>Acme Widget 3</h3><p>$7.25</p></article>
+          <article class="card"><i style="background:#fde68a"></i><h3>Acme Widget 4</h3><p>$24.00</p></article>
+          <article class="card"><i style="background:#ddd6fe"></i><h3>Acme Widget 5</h3><p>$9.99</p></article>
+          <article class="card"><i style="background:#a5f3fc"></i><h3>Acme Widget 6</h3><p>$31.00</p></article>
+          <article class="card"><i style="background:#fecaca"></i><h3>Acme Widget 7</h3><p>$15.75</p></article>
+          <article class="card"><i style="background:#d9f99d"></i><h3>Acme Widget 8</h3><p>$5.40</p></article>
+        </section>
+
+        <section class="band sun">
+          <h2>Free shipping over $50</h2>
+          <p>Orders ship within one business day. Returns are free for 30 days.</p>
+        </section>
+        <section class="band sea">
+          <h2>Built to last</h2>
+          <p>Every widget carries a five year warranty and is tested before it leaves the warehouse.</p>
+        </section>
+        <section class="band leaf">
+          <h2>Good for the planet</h2>
+          <p>Recycled packaging and carbon neutral delivery on every order.</p>
+        </section>
+        <section class="band rose">
+          <h2>Loved by customers</h2>
+          <p>"Does exactly what it says." - a very real customer.</p>
+        </section>
+      </div>
+
+      <section id="late-root">
+        <div id="spinner">loading... the content appears after 4000 ms</div>
+      </section>
+
+      <section id="tall-root"></section>
+
+      <section id="timings" hidden>
+        <h2>Navigation timings</h2>
+        <pre>measuring...</pre>
+      </section>
+    </main>
+
+    <footer><span id="end-marker"></span></footer>
+  </div>
+  <script src="demo.js"></script>
+</body>
+</html>

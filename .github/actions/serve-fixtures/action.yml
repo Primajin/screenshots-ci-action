@@ -1,0 +1,19 @@
+name: Serve fixtures
+description: Serve .github/smoke-fixtures/site on http://localhost:8080/ and wait until it answers.
+
+runs:
+  using: composite
+  steps:
+    - name: Start the fixture server and wait for readiness
+      shell: bash
+      run: |
+        nohup python3 -m http.server 8080 --directory "${GITHUB_WORKSPACE}/.github/smoke-fixtures/site" >/dev/null 2>&1 &
+        for _ in $(seq 1 40); do
+          if curl -sf http://localhost:8080/ >/dev/null; then
+            echo "Fixture server is ready"
+            exit 0
+          fi
+          sleep 0.25
+        done
+        echo "::error::The fixture server did not become ready"
+        exit 1

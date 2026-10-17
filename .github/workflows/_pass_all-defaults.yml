@@ -1,0 +1,32 @@
+name: "Positive Test - all defaults"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - only url is set: 7 desktop sizes as viewport sized jpeg with commit hash"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take screenshots with default options
+        uses: ./
+        with:
+          url: http://localhost:8080/
+      - name: Assert 7 viewport sized jpegs named after their size
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "All defaults" --expect-count 7 --expect-from-name 'desktopPage*' --type jpeg --with-hash --max-height 1080
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-all-defaults
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn

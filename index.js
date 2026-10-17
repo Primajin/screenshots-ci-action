@@ -1,9 +1,21 @@
 const core = require('@actions/core');
 const io = require('@actions/io');
 const github = require('@actions/github');
-const puppeteer = require('puppeteer');
+const { chromium, devices } = require('playwright');
 const fs = require('fs').promises;
 const telegram = require('./telegram.js');
+const {
+  isScrollEnabled,
+  resolveMaxImageHeight,
+  takeScreenshot,
+} = require('./capture.js');
+const { renderCommentBody } = require('./comment.js');
+const {
+  buildSelectorWaitOptions,
+  formatInvalidDevicesError,
+  mapWaitUntil,
+  resolveDevices,
+} = require('./utils.js');
 
 const DEFAULT_DESKTOP_VIEWPOINT_RATIO = [
   { width: 540, height: 405 },
@@ -16,7 +28,7 @@ const DEFAULT_DESKTOP_VIEWPOINT_RATIO = [
 ];
 
 const DEFAULT_TYPE = 'jpeg';
-const deviceNames = Object.keys(puppeteer.KnownDevices);
+const deviceNames = Object.keys(devices);
 const PATH = process.env.GITHUB_WORKSPACE
   ? `${process.env.GITHUB_WORKSPACE}/screenshots/`
   : `screenshots/`;
@@ -25,27 +37,40 @@ const POST_FIX = process.env.GITHUB_SHA
   ? `${process.env.GITHUB_SHA}`.substr(0, 7)
   : `${new Date().getTime()}`;
 
-const DEFAULT_WAITUNTIL_OPTION = 'networkidle0';
-const WAITUNTIL_OPTIONS = [
-  'load',
-  'domcontentloaded',
-  'networkidle0',
-  'networkidle2',
-];
-
 const DEFAULT_WAIT_FOR_SELECTOR = '';
-const DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT = 30000; // 30 seconds
 
 let browser;
+
+// Wait for the configured selector. A timeout must not break the flow, so the
+// error is logged and the screenshot is taken anyway (unchanged behaviour).
+async function waitForConfiguredSelector(page, selector, options) {
+  if (!selector) {
+    return;
+  }
+  try {
+    await page.waitForSelector(selector, options);
+  } catch (error) {
+    console.error(error);
+  }
+}
 
 async function run() {
   try {
     // 1. Get User config
 
     const url = core.getInput('url') || '';
-    let includedDevices = core.getInput('devices') || '';
+    const devicesInput = core.getInput('devices') || '';
     const noDesktop = core.getInput('noDesktop') === 'true';
     const fullPage = core.getInput('fullPage') === 'true';
+    // Only matters for full page captures; on unless explicitly switched off.
+    const scrollBeforeCapture = isScrollEnabled(
+      core.getInput('scrollBeforeCapture')
+    );
+    const maxImage = resolveMaxImageHeight(core.getInput('maxImageHeight'));
+    if (maxImage.warning) {
+      console.warn(maxImage.warning);
+    }
+    const maxImageHeight = maxImage.value;
     const noCommitHashFileName =
       core.getInput('noCommitHashFileName') === 'true';
 
@@ -55,41 +80,46 @@ async function run() {
       screenshotType = DEFAULT_TYPE;
     }
 
-    // "networkidle0" as default puppeteer default waitUntil option
-    let waitUntil = core.getInput('waitUntil') || DEFAULT_WAITUNTIL_OPTION;
-    if (!WAITUNTIL_OPTIONS.includes(waitUntil)) {
-      waitUntil = DEFAULT_WAITUNTIL_OPTION;
+    // Playwright values plus legacy Puppeteer values (networkidle0/2).
+    const waitUntilInput = core.getInput('waitUntil');
+    const {
+      value: waitUntil,
+      fallback: waitUntilFallback,
+      mappedFrom: waitUntilMappedFrom,
+    } = mapWaitUntil(waitUntilInput);
+    if (waitUntilFallback) {
+      console.warn(
+        `Unknown waitUntil "${waitUntilInput}", using "${waitUntil}".`
+      );
+    }
+    if (waitUntilMappedFrom) {
+      console.log(
+        `waitUntil "${waitUntilMappedFrom}" is a legacy Puppeteer value, using Playwright's "${waitUntil}".`
+      );
     }
 
-    let waitForSelector =
+    const waitForSelector =
       core.getInput('waitForSelector') || DEFAULT_WAIT_FOR_SELECTOR;
 
-    // Get waitForSelectorOptions
-    // waitForSelectorHidden default false
+    // waitForSelectorHidden / waitForSelectorVisible default false
     const waitForSelectorHidden =
       `${core.getInput('waitForSelectorHidden')}`.toLowerCase() === 'true';
-    // waitForSelectorVisible default false
     const waitForSelectorVisible =
       `${core.getInput('waitForSelectorVisible')}`.toLowerCase() === 'true';
-    let waitForSelectorTimeout = Number(
-      core.getInput('waitForSelectorTimeout')
-    );
-    if (!waitForSelectorTimeout) {
-      // Number will turn '' to 0, !0 === true, set timeout default value
-      waitForSelectorTimeout = DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT;
-    }
-    const waitForSelectorOptions = {
+    const waitForSelectorOptions = buildSelectorWaitOptions({
       visible: waitForSelectorVisible,
       hidden: waitForSelectorHidden,
-      timeout: waitForSelectorTimeout,
-    };
+      timeout: core.getInput('waitForSelectorTimeout'),
+    });
 
     core.startGroup('Action config');
     console.log('Input args:', {
       url,
       noDesktop: noDesktop,
-      devices: includedDevices,
+      devices: devicesInput,
       fullPage,
+      scrollBeforeCapture,
+      maxImageHeight,
       type: screenshotType,
       waitUntil,
       waitForSelector,
@@ -104,21 +134,13 @@ async function run() {
       return;
     }
 
-    includedDevices = includedDevices.split(',');
-
-    let inValidedDevices = includedDevices.filter(
-      (name) => !deviceNames.includes(name)
+    const { valid: includedDevices, invalid: invalidDevices } = resolveDevices(
+      devicesInput,
+      deviceNames
     );
-    inValidedDevices = inValidedDevices.map((name) => `- "${name}"`);
-    if (inValidedDevices.length) {
-      console.error(
-        ['Following devices name are invalid:', ...inValidedDevices].join('\n')
-      );
+    if (invalidDevices.length) {
+      throw new Error(formatInvalidDevicesError(invalidDevices));
     }
-
-    includedDevices = includedDevices.filter((name) =>
-      deviceNames.includes(name)
-    );
 
     if (noDesktop && !includedDevices.length) {
       console.log(
@@ -130,31 +152,9 @@ async function run() {
       return;
     }
 
-    // 3. Launch puppeteer
-    //
-    // In CI (GITHUB_SHA set) we need a Chrome and the --no-sandbox flag. Prefer
-    // an explicit PUPPETEER_EXECUTABLE_PATH / CHROME_BIN if the workflow set
-    // one; otherwise let puppeteer locate the system-installed Chrome via its
-    // release channel. (Older versions of this action hardcoded the bare name
-    // "google-chrome-stable" as executablePath, which puppeteer >= v20 rejects
-    // because it is not an absolute path.) Outside CI, fall back to puppeteer's
-    // own bundled browser.
-    const explicitPath =
-      process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || '';
-    let launchOptions = {};
-    if (process.env.GITHUB_SHA) {
-      launchOptions = { args: ['--no-sandbox'] };
-      if (explicitPath) {
-        launchOptions.executablePath = explicitPath;
-      } else {
-        launchOptions.channel = 'chrome';
-      }
-    } else if (explicitPath) {
-      launchOptions = { executablePath: explicitPath };
-    }
-    browser = await puppeteer.launch(launchOptions);
-
-    const desktopPage = await browser.newPage();
+    // 3. Launch Playwright (chromium). The browser is installed by action.yml
+    // via `npx playwright install --with-deps chromium`.
+    browser = await chromium.launch();
 
     if (process.env.GITHUB_WORKSPACE) {
       await io.mkdirP(`${process.env.GITHUB_WORKSPACE}/screenshots/`);
@@ -166,34 +166,39 @@ async function run() {
       core.startGroup('start process desktop');
       console.log('Processing desktop screenshot');
 
+      const desktopContext = await browser.newContext({
+        viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0],
+      });
+      const desktopPage = await desktopContext.newPage();
+
       await desktopPage.goto(url, { waitUntil });
       // wait for page element when config has element selector
-      if (waitForSelector) {
-        try {
-          await desktopPage.waitForSelector(
-            waitForSelector,
-            waitForSelectorOptions
-          );
-        } catch (error) {
-          // waitForSelector timeout will throw error
-          // Catch error to prevent flow break
-          console.error(error);
-        }
-      }
+      await waitForConfiguredSelector(
+        desktopPage,
+        waitForSelector,
+        waitForSelectorOptions
+      );
 
       for (const { width, height } of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
-        // filename with/without post fix commit hash name
-        const desktopPath = noCommitHashFileName
-          ? `${PATH}desktopPage${width}x${height}.${screenshotType}`
-          : `${PATH}desktopPage${width}x${height}-${POST_FIX}.${screenshotType}`;
+        // filename with/without post fix commit hash name; a very tall page
+        // is split into -part1, -part2, ... inserted before that suffix
+        const desktopPath = (part) =>
+          noCommitHashFileName
+            ? `${PATH}desktopPage${width}x${height}${part}.${screenshotType}`
+            : `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
 
-        await desktopPage.setViewport({ width, height });
-        await desktopPage.screenshot({
-          path: desktopPath,
+        await desktopPage.setViewportSize({ width, height });
+        await takeScreenshot(desktopPage, {
+          pathFor: desktopPath,
+          maxImageHeight,
           fullPage,
           type: screenshotType,
+          scrollBeforeCapture,
+          waitUntil,
+          log: console.log,
         });
       }
+      await desktopContext.close();
       core.endGroup(); // end start process desktop
     }
 
@@ -202,38 +207,38 @@ async function run() {
     if (includedDevices.length) {
       core.startGroup('start process mobile devices');
       console.log('Processing mobile devices screenshot');
-      const mobilePages = await Promise.all([
-        ...Array.from({ length: includedDevices.length }).fill(
-          browser.newPage()
-        ),
-      ]);
 
-      for (const [index, page] of mobilePages.entries()) {
+      for (const deviceName of includedDevices) {
         // filename with/without post fix commit hash name
-        let mobilePath = `${PATH}${includedDevices[index].replace(/ /g, '_')}`;
-        mobilePath = noCommitHashFileName
-          ? `${mobilePath}.${screenshotType}`
-          : `${mobilePath}-${POST_FIX}.${screenshotType}`;
+        const mobileBase = `${PATH}${deviceName.replace(/ /g, '_')}`;
+        const mobilePath = (part) =>
+          noCommitHashFileName
+            ? `${mobileBase}${part}.${screenshotType}`
+            : `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
 
-        await page.emulate(puppeteer.KnownDevices[`${includedDevices[index]}`]);
+        // Every device gets its own context built from Playwright's descriptor
+        // (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
+        const context = await browser.newContext({ ...devices[deviceName] });
+        const page = await context.newPage();
 
         await page.goto(url, { waitUntil });
         // wait for page element when config has element selector
-        if (waitForSelector) {
-          try {
-            await page.waitForSelector(waitForSelector, waitForSelectorOptions);
-          } catch (error) {
-            // waitForSelector timeout will throw error
-            // Catch error to prevent flow break
-            console.error(error);
-          }
-        }
+        await waitForConfiguredSelector(
+          page,
+          waitForSelector,
+          waitForSelectorOptions
+        );
 
-        await page.screenshot({
-          path: mobilePath,
+        await takeScreenshot(page, {
+          pathFor: mobilePath,
+          maxImageHeight,
           fullPage,
           type: screenshotType,
+          scrollBeforeCapture,
+          waitUntil,
+          log: console.log,
         });
+        await context.close();
       }
       core.endGroup(); // end start process mobile devices
     }
@@ -247,7 +252,8 @@ async function run() {
     core.setFailed(error.message);
 
     if (browser && browser.close) {
-      await browser.close();
+      // Cleanup must never mask the original error or skip the exit code.
+      await browser.close().catch(() => {});
     }
 
     process.exit(1);
@@ -281,10 +287,12 @@ async function uploadAndCommnetImage(files) {
         });
         console.log('uploadReleaseAsset:', result);
         if (result.data.browser_download_url) {
-          uploadedImage.push([
-            `${ISOTime}-${fileName}`,
-            result.data.browser_download_url,
-          ]);
+          uploadedImage.push({
+            fileName,
+            name: `${ISOTime}-${fileName}`,
+            url: result.data.browser_download_url,
+            bytes: data.length,
+          });
         }
       } catch (error) {
         console.error(`Failed to upload: ${fileName}`);
@@ -294,24 +302,7 @@ async function uploadAndCommnetImage(files) {
 
     if (uploadedImage.length) {
       try {
-        /**
-         * 1. template strings' tail new line (after img tag) is for space
-         *    between next image
-         * 2. template strings dont have indent is for comment layout
-         */
-        const body = uploadedImage
-          .sort((a, b) => a[1].localeCompare(b[1]))
-          .reduce(
-            (body, [fileName, browser_download_url]) =>
-              body +
-              `## ${fileName}
-- ${browser_download_url}
-
-<img src=${browser_download_url} />
-
-`,
-            ''
-          );
+        const body = renderCommentBody(uploadedImage, files);
 
         const result = await octokit.rest.issues.createComment({
           owner,

@@ -15,16 +15,12 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
@@ -57,17 +53,13 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url }}
         devices: ${{ github.event.inputs.devices }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
@@ -93,28 +85,24 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
+    - uses: actions/checkout@v7
     - name: screenshots-url1-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url1 }}
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-url1-screenshots
     - run: rm ./screenshots/*
 
     - name: screenshots-url2-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: ${{ github.event.inputs.url2 }}
         devices: iPhone 6,iPhone 6 landscape
         noDesktop: true
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-url2-screenshots

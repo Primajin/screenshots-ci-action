@@ -2,7 +2,7 @@
 
 ## Prerequisites
 1. Bot token
-    - how to creat and get bot token: https://dev.to/rizkyrajitha/get-notifications-with-telegram-bot-537l
+    - how to create and get bot token: https://dev.to/rizkyrajitha/get-notifications-with-telegram-bot-537l
 2. GroupId or ChannelId
     - how to get groupId: https://stackoverflow.com/a/38388851
     - how to get channelId: https://gist.github.com/mraaroncruz/e76d19f7d61d59419002db54030ebe35#gistcomment-3276103
@@ -12,7 +12,7 @@
 Set `TELE_CHAT_ID` and `TELE_BOT_TOKEN` as repo secrets for security issue.
 
 Follow doc to set secretes
-- https://docs.github.com/en/actions/configuring-and-managing-workflows/creating-and-storing-encrypted-secrets
+- https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions (Settings > Secrets and variables > Actions)
 - set groupId (or channelId) as `TELE_CHAT_ID` secret
 - set bot token as `TELE_BOT_TOKEN` secret
 
@@ -40,13 +40,9 @@ jobs:
   screenshots:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - name: install puppeteer-headful
-      uses: mujo-code/puppeteer-headful@master
-      env:
-        CI: 'true'
+    - uses: actions/checkout@v7
     - name: screenshots-ci-action
-      uses: Primajin/screenshots-ci-action@v3
+      uses: Primajin/screenshots-ci-action@v4
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape

@@ -1,0 +1,33 @@
+name: "Positive Test - devices"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - iPhone 13 and iPad Pro 11 landscape next to the desktop sizes"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Take screenshots with two devices
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          devices: iPhone 13,iPad Pro 11 landscape
+      - name: Assert device pixel dimensions (viewport x device scale factor)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "Devices" --expect-count 9 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-devices
+          path: screenshots
+          retention-days: 7
+          if-no-files-found: warn
