@@ -310,6 +310,19 @@ number of parts and the file size:
 <sub>Commit 9890851 · [workflow run](https://github.com/.../actions/runs/1)</sub>
 ```
 
+This is how it looks on the pull request, closed as posted and with one
+section opened (the images are the fixture page of this repository's CI):
+
+![The posted comment: a headline and one closed section per capture with name, pixel size and file size](./asset/pr-comment-closed.jpg)
+![The same comment with the Desktop 960 section opened: a link and the image](./asset/pr-comment-open.jpg)
+
+A tall page is one section with its parts side by side inside, and
+`comment-layout: links` posts only a list of links:
+
+![A Tall page comment: one closed section saying 3 parts](./asset/pr-comment-tall-parts.jpg)
+![The Tall page section opened: the links of the parts and the first images](./asset/pr-comment-tall-parts-open.jpg)
+![A links-only comment](./asset/pr-comment-links.jpg)
+
 Every image carries `width` and `height`, scaled down to at most
 `comment-image-width` CSS pixels (default 600) with the aspect ratio kept, so the
 browser reserves the space before the image arrives. The parts of one capture
@@ -572,10 +585,11 @@ jobs:
 ## Download screenshots
 
 The screenshots of a run are in the **Artifacts** section at the bottom of the
-run's summary page; the artifact is downloaded as a zip file.
+run's summary page (here one artifact per scenario of this repository's CI).
+Click an artifact name to download it as a zip file; the zip contains the image
+files of `screenshots/`.
 
-![The Artifacts section of a workflow run](./asset/download_screenshots_01.jpg)
-![The downloaded screenshots](./asset/download_screenshots_02.jpg)
+![The Artifacts section of a workflow run: a list of artifacts with name, size and digest](./asset/run-artifacts.jpg)
 
 ## Telegram
 

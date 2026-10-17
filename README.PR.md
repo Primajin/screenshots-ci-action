@@ -53,8 +53,11 @@ Good to know:
 - `release-id` is looked up in the repository the workflow runs in, so a
   release cannot be shared between repositories.
 
-![Creating a release on GitHub (screenshot from the original project)](./asset/PR_comment_01.jpg)
-![The id in the response of the releases API (screenshot from the original project)](./asset/PR_comment_02.jpg)
+The release of this repository's own CI as an example: a published
+pre-release whose only content is the assets (the screenshots) that the action
+uploaded, named `<ISO timestamp>-<file>`:
+
+![The ci-screenshots pre-release with its notes and the list of uploaded assets](./asset/release-ci-screenshots.jpg)
 
 ### Asset names and the limit of 1000 assets
 
@@ -152,7 +155,11 @@ jobs:
 - To upload without posting (for example from a `push` workflow), set
   `comment: false` together with `release-id`.
 
-![The comment of the v3 action (v4 collapses the images into sections, see PR comments)](./asset/PR_comment_03.jpg)
+The resulting comment (one closed section per capture, opened here for one of
+them; see [PR comments](README.md#pr-comments) for the options):
+
+![The comment on the pull request, closed](./asset/pr-comment-closed.jpg)
+![The comment with one section opened](./asset/pr-comment-open.jpg)
 
 ## 3. Pull requests from forks and Dependabot
 
