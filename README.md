@@ -55,6 +55,15 @@ Telegram chat.
 | `pre-script-path`(string) | optional(`''`) | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. <br> See [README.pre-script](/README.pre-script.md) for examples |
 | `pre-script-timeout`(number) | optional(`30000`) | Maximum time in milliseconds the pre-script may run before the action fails. Defaults to `30000`. |
 | `release-id`(string) | optional(`""`) | GitHub Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
+| `comment`(boolean) | optional(`true`) | Post the uploaded screenshots to the pull request. `false`, `0`, `no` and `off` (any case) switch it off: the screenshots are still uploaded to the release (needs `release-id`), nothing is posted. See [PR comments](#pr-comments). |
+| `comment-layout`(string) | optional(`details`) | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
+| `comment-open`(string) | optional(`none`) | Layout `details` only: which sections start open. `none` (all closed, so the page stays short and does not jump while images load), `first` or `all`. |
+| `comment-group-by`(string) | optional(`capture`) | `capture`: one group per desktop size or device, with its parts inside. `all`: a single group with everything. `none`: one group per image. |
+| `comment-image-width`(number) | optional(`600`) | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. `0` leaves both attributes out. |
+| `comment-mode`(string) | optional(`update`) | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a PR keeps one comment that follows every push. `new`: always post a new comment. |
+| `comment-tag`(string) | optional(`screenshots`) | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
+| `comment-headline`(string) | optional(`Screenshots`) | Headline of the comment. |
+| `comment-footer`(boolean) | optional(`true`) | A small footer with the commit and a link to the workflow run. `false`, `0`, `no` and `off` switch it off. |
 
 ## Envs
 | Name(type) | required(default) | Description |
@@ -92,9 +101,9 @@ to the default. Why a ceiling at all:
 - **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
   extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
   usual single image and name.
-- **PR comment:** the parts of one capture are listed under one heading with
-  their total size (`part N of M`, and which parts failed to upload), and the
-  images sit directly next to each other.
+- **PR comment:** the parts of one capture are listed together with their total
+  size (`part N of M`, and which parts failed to upload), and the images sit
+  directly next to each other; see [PR comments](#pr-comments).
 - **Size guard (JPEG parts):** a JPEG part above about 4.8 MB is captured again
   with a lower quality (80, 70, 60, 50, 40). A PNG part over 5 MB only logs a
   warning.
@@ -107,6 +116,109 @@ above. Lower `max-image-height` for more, smaller parts.
 Note: another way to render everything is to resize the viewport to the height
 of the page before the capture (as aktion does). This action does not, because
 it changes the layout of everything sized in `vh`.
+
+## PR comments
+
+With `release-id` and a `pull_request` workflow the action uploads every
+screenshot to the release and posts them to the pull request (see
+[README.PR](/README.PR.md) for the setup). The `comment-*` inputs decide how the
+comment looks and whether it is posted at all.
+
+**Default: closed accordions, one comment per tag that is updated in place.**
+Each capture (a desktop size, a device, all parts of a tall page) is a
+collapsed `<details>` section, so the pull request page stays short and does not
+jump while the pictures load. The summary shows the name, the pixel size, the
+number of parts and the file size:
+
+```markdown
+<!-- screenshots-ci-action:screenshots -->
+### Screenshots
+
+<details>
+<summary><b>iPhone 13</b> · 1,170 × 20,276 px · 3 parts · 4.2 MB</summary>
+
+- part 1 of 3: https://github.com/.../iPhone_13-part1-9890851.jpeg
+...
+
+<img src="https://github.com/.../iPhone_13-part1-9890851.jpeg" alt="iPhone 13, part 1 of 3" width="600" height="8205"><img ...>
+
+</details>
+
+<sub>Commit 9890851 · [workflow run](https://github.com/.../actions/runs/1)</sub>
+```
+
+Every image carries `width` and `height`, scaled down to at most
+`comment-image-width` CSS pixels (default 600) with the aspect ratio kept, so the
+browser reserves the space before the image arrives. The parts of one capture
+sit directly next to each other and read as one continuous page.
+
+```yaml
+# the defaults: closed accordions, one accordion per capture
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://www.google.com/
+    release-id: 63601424
+
+# the first accordion starts open
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://www.google.com/
+    release-id: 63601424
+    comment-open: first
+
+# everything in a single accordion, or one accordion per image
+    comment-group-by: all     # or: none
+
+# images directly under a heading, no accordion (like v3 did)
+    comment-layout: inline
+
+# only a list of links, no embedded images: the lightest comment
+    comment-layout: links
+
+# no width and height on the images
+    comment-image-width: 0
+```
+
+**Update in place.** The first line of the comment is a hidden marker,
+`<!-- screenshots-ci-action:<comment-tag> -->`. On the next run the action lists the
+comments of the pull request (all pages), finds the one that starts with that
+marker and was written by `github-actions[bot]` (or the owner of a personal
+access token), and edits it, so a pull request keeps one screenshot comment that
+follows every push. Nothing is found: a new comment is created. A comment that
+cannot be edited any more (deleted in the meantime): a new one is created.
+`comment-mode: new` always posts a new comment, as v3 did.
+
+**Several calls, several comments.** Every call of the action on one pull
+request that should keep its own comment needs its own `comment-tag` (and
+usually a `comment-headline`):
+
+```yaml
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://staging.example.com/
+    release-id: 63601424
+    comment-tag: staging
+    comment-headline: Staging
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://staging.example.com/pricing
+    release-id: 63601424
+    comment-tag: pricing
+    comment-headline: Pricing page
+```
+
+Calls with the **same** tag must not run in parallel (two jobs of a matrix, or two
+pushes in a row without a `concurrency` group): both can see no comment yet and
+each creates one. Give parallel jobs different tags, or use a `concurrency`
+group per pull request.
+
+**Not posting.** `comment: false` still uploads the screenshots to the release
+(when `release-id` is set) and logs their URLs, but posts nothing; the files in
+`screenshots/` can go to a workflow artifact as before. A comment that would
+exceed GitHub's 65,536 character limit is posted with the `links` layout and a
+warning. An unknown value for an enum input (`comment-layout`, `comment-open`,
+`comment-group-by`, `comment-mode`) or an invalid `comment-image-width` is
+logged as a warning and the default is used.
 
 ## Output screenshots
 There are **3** different way to output files
@@ -381,8 +493,8 @@ rendered in its own browser context.
 
 ## Migrating from v3
 
-v4 replaces Puppeteer with Playwright. Outputs are the same, but four things
-can break an existing workflow:
+v4 replaces Puppeteer with Playwright. Outputs are the same, but five things
+can change in an existing workflow:
 
 1. **Input names are now kebab-case**, matching the GitHub Actions convention.
    The old camelCase names are **not** accepted any more; GitHub only prints an
@@ -418,6 +530,14 @@ can break an existing workflow:
    `dist/` on the Node runtime. You no longer need a Chrome/puppeteer install
    step (e.g. `mujo-code/puppeteer-headful`) in your workflow, and
    `PUPPETEER_EXECUTABLE_PATH` / `CHROME_BIN` are no longer honoured.
+
+5. **The PR comment is updated in place** (behaviour change). v3 posted a new
+   comment with plain `<img>` tags for every push. v4 keeps one comment per
+   `comment-tag` and edits it on the next push, with a closed `<details>` section
+   per capture. To get the v3 comment back use `comment-mode: new`,
+   `comment-layout: inline` and `comment-image-width: 0`; see
+   [PR comments](#pr-comments). Several calls of the action on one pull request
+   now need different `comment-tag`s, or they overwrite each other's comment.
 
 Also new: `wait-for-selector-timeout: 0` now really disables the timeout (it used
 to fall back to 30 seconds), and `release-id` is a declared input.
