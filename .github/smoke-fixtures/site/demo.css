@@ -343,3 +343,48 @@ body:not([data-mode='late']) #late-root {
   margin: 0;
   white-space: pre-wrap;
 }
+
+/* ---- ?mode=tall: a 20000px document whose sections only render once they
+   have been scrolled into view (IntersectionObserver), like lazy content ---- */
+body[data-mode='tall'] .demo-content,
+body[data-mode='tall'] #ruler {
+  display: none;
+}
+
+body[data-mode='tall'] .probe {
+  height: 140px;
+  overflow: hidden;
+}
+
+body[data-mode='tall'] nav {
+  height: 56px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+body[data-mode='tall'] footer {
+  height: 80px;
+}
+
+.reveal {
+  position: relative;
+  height: 500px;
+}
+
+.reveal .label {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #0f172a;
+  font: 700 26px/1.3 ui-monospace, Menlo, Consolas, monospace;
+  text-align: center;
+}
+
+.reveal.on {
+  background: repeating-linear-gradient(45deg, hsl(var(--hue) 75% 86%) 0 28px, hsl(var(--hue) 75% 76%) 28px 56px);
+}
+
+.reveal.on .label {
+  display: flex;
+}

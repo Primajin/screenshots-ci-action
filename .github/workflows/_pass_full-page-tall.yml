@@ -1,0 +1,68 @@
+name: "Positive Test - full page, tall"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - a 20000px page is captured in consecutive parts without blanks, wraps or gaps"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Capture the tall page with the default max image height
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=tall
+          noDesktop: true
+          devices: iPad Pro 11
+          fullPage: true
+          type: png
+      - name: Assert 3 parts of at most 16000px that add up to the page
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "tall page, default (iPad Pro 11)" --archive-to artifacts/default --expect-count 3 --max-height 16000 --expect-total-height 40552 --expect 'iPad_Pro_11-part1-*=1668x16000' --expect 'iPad_Pro_11-part3-*=1668x8552' --with-hash --max-empty-fraction 0.02 --distinct-parts --type png
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Capture the tall page in parts of at most 4000px
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=tall
+          noDesktop: true
+          devices: iPhone 13
+          fullPage: true
+          maxImageHeight: 4000
+          type: png
+      - name: Assert 16 parts of at most 4000px that add up to the page
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "tall page, max 4000px (iPhone 13)" --archive-to artifacts/max-4000 --expect-count 16 --max-height 4000 --expect-total-height 60828 --max-empty-fraction 0.02 --distinct-parts --type png
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Run with a max image height above the limit and capture the log
+        shell: bash
+        env:
+          INPUT_URL: http://localhost:8080/?mode=tall
+          INPUT_NODESKTOP: true
+          INPUT_DEVICES: iPad Pro 11
+          INPUT_FULLPAGE: true
+          INPUT_MAXIMAGEHEIGHT: 99999
+          INPUT_TYPE: png
+        run: |
+          node "$GITHUB_WORKSPACE/index.js" 2>&1 | tee action.log
+          grep -qF 'maxImageHeight 99999 is above' action.log
+          grep -qF 'capturing 3 consecutive parts' action.log
+      - name: Assert the clamped parts stay within 16000px
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "tall page, max-image-height 99999 (clamped)" --archive-to artifacts/clamped --expect-count 3 --max-height 16000 --expect-total-height 40552 --max-empty-fraction 0.02 --distinct-parts --type png
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-full-page-tall
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

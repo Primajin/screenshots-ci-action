@@ -37,7 +37,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Assert the local screenshots
         run: |
-          node .github/scripts/assert-screenshots.mjs --title "Release upload" --expect-count 9 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
+          node .github/scripts/assert-screenshots.mjs --title "Release upload" --archive-to artifacts/release-capture --expect-count 9 --expect-from-name 'desktopPage*' --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
       - name: Assert the release assets and the PR comment
         run: |
           set -euo pipefail
@@ -50,11 +50,74 @@ jobs:
           done
           tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
           sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
-          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")))] | .[0].body // empty")
+          # A capture split into parts is posted as one comment with "part N of M" lines.
+          expect_parts=$(printenv EXPECT_PARTS || true)
+          partfilter='(.body | contains("part 1 of") | not)'
+          if [ -n "$expect_parts" ]; then partfilter='(.body | contains("part 1 of"))'; fi
+          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")) and $partfilter)] | .[0].body // empty")
           [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
-          images=$(echo "$comment" | grep -c '<img src=' || true)
+          images=$(echo "$comment" | grep -o '<img src=' | wc -l)
           echo "PR comment embeds $images image(s)"
           [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
+          if [ -n "$expect_parts" ]; then
+            echo "$comment" | grep -q "part $expect_parts of $expect_parts" || { echo "::error::The comment does not list part $expect_parts of $expect_parts"; exit 1; }
+          fi
+          url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
+          ctype=$(curl -sfL -o /dev/null -r 0-0 -w '%{content_type}' "$url") || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
+          case "$ctype" in
+            image/*|application/octet-stream) echo "Image URL resolves ($ctype): $url" ;;
+            *) echo "::error::Unexpected content type $ctype for $url"; exit 1 ;;
+          esac
+          {
+            echo "### PR comment and release"
+            echo ""
+            echo "- Release \`$tag\` (id $CI_RELEASE_ID) received at least $files new assets"
+            echo "- The PR comment embeds $images images"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remember when the tall page capture started
+        run: |
+          rm -rf screenshots
+          echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+      - name: Upload a tall page, captured in parts, to the release
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=tall
+          noDesktop: true
+          devices: iPad Pro 11
+          fullPage: true
+          type: jpeg
+          releaseId: ${{ env.CI_RELEASE_ID }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the local parts
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "Release upload, tall page" --archive-to artifacts/release-tall --expect-count 3 --max-height 16000 --expect-total-height 40552 --type jpeg
+      - name: Assert the release assets and the PR comment with parts
+        env:
+          EXPECT_PARTS: '3'
+        run: |
+          set -euo pipefail
+          files=$(ls screenshots | wc -l)
+          assets=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.created_at >= \"$SINCE\") | .name")
+          echo "$assets"
+          [ "$(echo "$assets" | grep -c .)" -ge "$files" ] || { echo "::error::Expected at least $files new release assets"; exit 1; }
+          for file in screenshots/*; do
+            echo "$assets" | grep -q -- "$(basename "$file")$" || { echo "::error::No release asset for $file"; exit 1; }
+          done
+          tag=$(gh api "repos/$GH_REPO/releases/$CI_RELEASE_ID" --jq .tag_name)
+          sha7=$(echo "$GITHUB_SHA" | cut -c1-7)
+          # A capture split into parts is posted as one comment with "part N of M" lines.
+          expect_parts=$(printenv EXPECT_PARTS || true)
+          partfilter='(.body | contains("part 1 of") | not)'
+          if [ -n "$expect_parts" ]; then partfilter='(.body | contains("part 1 of"))'; fi
+          comment=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq "[.[] | select(.created_at >= \"$SINCE\" and (.body | contains(\"/releases/download/$tag/\")) and (.body | contains(\"-$sha7.\")) and $partfilter)] | .[0].body // empty")
+          [ -n "$comment" ] || { echo "::error::No PR comment with the screenshots found"; exit 1; }
+          images=$(echo "$comment" | grep -o '<img src=' | wc -l)
+          echo "PR comment embeds $images image(s)"
+          [ "$images" -eq "$files" ] || { echo "::error::Expected $files images in the PR comment"; exit 1; }
+          if [ -n "$expect_parts" ]; then
+            echo "$comment" | grep -q "part $expect_parts of $expect_parts" || { echo "::error::The comment does not list part $expect_parts of $expect_parts"; exit 1; }
+          fi
           url=$(echo "$comment" | grep -oE 'https?://[^ >]*/releases/download/[^ >]*' | head -1)
           ctype=$(curl -sfL -o /dev/null -r 0-0 -w '%{content_type}' "$url") || { echo "::error::Image URL is not publicly downloadable: $url"; exit 1; }
           case "$ctype" in
@@ -72,7 +135,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: screenshots-release-pr-comment
-          path: screenshots
+          path: artifacts
           retention-days: 7
           if-no-files-found: warn
       - name: Prune assets older than 30 days once the release nears its asset limit

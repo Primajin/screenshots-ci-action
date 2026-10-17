@@ -22,6 +22,8 @@
   "files": [
     "index.js",
     "action.yml",
+    "capture.js",
+    "comment.js",
     "pre-script.js",
     "telegram.js",
     "utils.js"

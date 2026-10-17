@@ -8,6 +8,8 @@ import * as github from '@actions/github';
 import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
+import {resolveMaxImageHeight, takeScreenshot} from './capture.js';
+import {renderCommentBody} from './comment.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -64,6 +66,15 @@ async function run() {
 		const devicesInput = core.getInput('devices');
 		const isNoDesktop = core.getInput('noDesktop') === 'true';
 		const isFullPage = core.getInput('fullPage') === 'true';
+		// Only matters for full page captures; on unless explicitly switched off.
+		const isScrollBeforeCapture
+			= core.getInput('scrollBeforeCapture').toLowerCase() !== 'false';
+		const maxImage = resolveMaxImageHeight(core.getInput('maxImageHeight'));
+		if (maxImage.warning) {
+			console.warn(maxImage.warning);
+		}
+
+		const maxImageHeight = maxImage.value;
 		const isNoCommitHashFileName
 			= core.getInput('noCommitHashFileName') === 'true';
 
@@ -102,6 +113,8 @@ async function run() {
 			noDesktop: isNoDesktop,
 			devices: devicesInput,
 			fullPage: isFullPage,
+			scrollBeforeCapture: isScrollBeforeCapture,
+			maxImageHeight,
 			type: screenshotType,
 			waitUntil,
 			waitForSelector,
@@ -192,16 +205,22 @@ async function run() {
 			);
 
 			for (const {width, height} of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
-				// Filename with/without post fix commit hash name
-				const desktopPath = isNoCommitHashFileName
-					? `${PATH}desktopPage${width}x${height}.${screenshotType}`
-					: `${PATH}desktopPage${width}x${height}-${POST_FIX}.${screenshotType}`;
+				// Filename with/without post fix commit hash name; a very tall page is
+				// split into -part1, -part2, ... inserted before that suffix
+				const desktopPath = part =>
+					isNoCommitHashFileName
+						? `${PATH}desktopPage${width}x${height}${part}.${screenshotType}`
+						: `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
 
 				await desktopPage.setViewportSize({width, height});
-				await desktopPage.screenshot({
-					path: desktopPath,
+				await takeScreenshot(desktopPage, {
+					pathFor: desktopPath,
+					maxImageHeight,
 					fullPage: isFullPage,
 					type: screenshotType,
+					scrollBeforeCapture: isScrollBeforeCapture,
+					waitUntil,
+					log: console.log,
 				});
 			}
 
@@ -217,10 +236,11 @@ async function run() {
 
 			for (const deviceName of includedDevices) {
 				// Filename with/without post fix commit hash name
-				let mobilePath = `${PATH}${deviceName.replaceAll(' ', '_')}`;
-				mobilePath = isNoCommitHashFileName
-					? `${mobilePath}.${screenshotType}`
-					: `${mobilePath}-${POST_FIX}.${screenshotType}`;
+				const mobileBase = `${PATH}${deviceName.replaceAll(' ', '_')}`;
+				const mobilePath = part =>
+					isNoCommitHashFileName
+						? `${mobileBase}${part}.${screenshotType}`
+						: `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
 
 				// Every device gets its own context built from Playwright's descriptor
 				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
@@ -237,10 +257,14 @@ async function run() {
 					waitForSelectorOptions,
 				);
 
-				await page.screenshot({
-					path: mobilePath,
+				await takeScreenshot(page, {
+					pathFor: mobilePath,
+					maxImageHeight,
 					fullPage: isFullPage,
 					type: screenshotType,
+					scrollBeforeCapture: isScrollBeforeCapture,
+					waitUntil,
+					log: console.log,
 				});
 				await context.close();
 			}
@@ -293,10 +317,12 @@ async function uploadAndCommnetImage(files) {
 				});
 				console.log('uploadReleaseAsset:', result);
 				if (result.data.browser_download_url) {
-					uploadedImage.push([
-						`${ISOTime}-${fileName}`,
-						result.data.browser_download_url,
-					]);
+					uploadedImage.push({
+						fileName,
+						name: `${ISOTime}-${fileName}`,
+						url: result.data.browser_download_url,
+						bytes: data.length,
+					});
 				}
 			} catch (error) {
 				console.error(`Failed to upload: ${fileName}`);
@@ -306,24 +332,7 @@ async function uploadAndCommnetImage(files) {
 
 		if (uploadedImage.length > 0) {
 			try {
-				/**
-         1. template strings' tail new line (after img tag) is for space
-         between next image
-         2. template strings dont have indent is for comment layout
-         */
-				const body = uploadedImage
-					.toSorted((a, b) => a[1].localeCompare(b[1]))
-					.reduce(
-						(body, [fileName, browser_download_url]) =>
-							body
-							+ `## ${fileName}
-- ${browser_download_url}
-
-<img src=${browser_download_url} />
-
-`,
-						'',
-					);
+				const body = renderCommentBody(uploadedImage, files);
 
 				const result = await octokit.rest.issues.createComment({
 					owner,

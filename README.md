@@ -42,6 +42,8 @@ Telegram chat.
 | `devices`(string) | optional(`""`) | Specific mobile devices to generate screenshots. **Use comma(`,`) to separate devices name.** Device name list in below. |
 | `noDesktop`(boolean) | optional(`false`) | Set `true` if not require to get desktop viewpoint screenshots. |
 | `fullPage`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
+| `scrollBeforeCapture`(boolean) | optional(`true`) | Only used when `fullPage` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. Set `false` to capture the page as it is. See [Tall pages](#tall-pages). |
+| `maxImageHeight`(number) | optional(`16000`) | Only used when `fullPage` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image, at most `16000`. A taller page is captured in consecutive parts. See [Tall pages](#tall-pages). |
 | `noCommitHashFileName`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
 | `type`(string) | optional(`jpeg`) | Specify screenshot type, can be either `jpeg` or `png`. |
 | `waitUntil`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
@@ -353,6 +355,36 @@ three things can break an existing workflow:
 Also new: `waitForSelectorTimeout: 0` now really disables the timeout (it used
 to fall back to 30 seconds), and `releaseId` is a declared input.
 
+## Tall pages
+
+Chromium cannot capture more than 16,384 device pixels in one screenshot:
+beyond that a capture wraps and repeats the top of the page. With `fullPage: true`
+a page whose output height (CSS pixels x device scale factor) is above
+`maxImageHeight` (default and maximum `16000`) is therefore captured as
+consecutive parts that together cover the page exactly, without gaps, overlap,
+cropping or downscaling. Larger values are clamped to `16000` with a warning;
+invalid values fall back to the default.
+
+- **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
+  extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
+  usual single image and name.
+- **PR comment:** the parts of one capture are listed under one heading with
+  their total size (`part N of M`), and the images sit directly next to each
+  other so they read as one continuous page.
+- **Size guard:** GitHub's image proxy refuses images over 5 MB in comments. A
+  JPEG part above about 4.8 MB is captured again with a lower quality (80, 70,
+  60, 50, 40); a PNG part over 5 MB only logs a warning.
+- **Lazy content:** before a full page capture the action scrolls through the
+  document in viewport-sized steps (at most 15 seconds and 150 steps, so
+  infinite-scroll pages stop), goes back to the top and waits for the page
+  height to settle, so lazy images and scroll-reveal sections are rendered. Turn
+  it off with `scrollBeforeCapture: false`.
+
+Note: another way to render everything is to resize the viewport to the height
+of the page before the capture (as
+[asfand-dev/aktion](https://github.com/asfand-dev/aktion) does). This action
+does not, because it changes the layout of everything sized in `vh`.
+
 ## Development
 
 The action is plain ES modules on Node 24 or newer, linted with [xo](https://github.com/xojs/xo)
@@ -388,6 +420,12 @@ npm run coverage    # unit tests with coverage
 ![img](./asset/Nexus_7-9890851.png)
 
 ### mobile (iPhone_6, fullPage)
+github.com is 27,560 px tall on an iPhone 6 (2x), above the 16,000 px limit of
+one image, so the capture is two parts (`iPhone_6-part1-9890851.jpeg` and
+`iPhone_6-part2-9890851.jpeg`), shown here side by side (see
+[Tall pages](#tall-pages)):
+
 <p align="center">
-  <img width="auto" height="450" src="asset/iPhone_6-9890851-fullPage.jpeg"
+  <img width="240" align="top" src="asset/iPhone_6-part1-9890851.jpeg" />
+  <img width="240" align="top" src="asset/iPhone_6-part2-9890851.jpeg" />
 </p>

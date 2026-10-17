@@ -19,6 +19,14 @@ inputs:
     required: false
     description: "When true, takes a screenshot of the full scrollable page. Defaults to false"
     default: false
+  scrollBeforeCapture:
+    required: false
+    description: "Only applies when fullPage is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content renders (default true). Pages taller than Chromium's capture limit are captured in tiles and stitched losslessly either way."
+    default: true
+  maxImageHeight:
+    required: false
+    description: "Only applies when fullPage is true. Maximum height in output pixels (CSS pixels x device scale factor) of one image, at most 16000 (Chromium cannot capture more in one go). A taller page is captured as consecutive parts named <name>-part1, -part2, ... Defaults to 16000."
+    default: '16000'
   type:
     required: false
     description: "Specify screenshot type, can be either jpeg or png. Defaults to 'jpeg'."
@@ -94,6 +102,8 @@ runs:
         INPUT_NODESKTOP: ${{ inputs.noDesktop }}
         INPUT_DEVICES: ${{ inputs.devices }}
         INPUT_FULLPAGE: ${{ inputs.fullPage }}
+        INPUT_SCROLLBEFORECAPTURE: ${{ inputs.scrollBeforeCapture }}
+        INPUT_MAXIMAGEHEIGHT: ${{ inputs.maxImageHeight }}
         INPUT_TYPE: ${{ inputs.type }}
         INPUT_NOCOMMITHASHFILENAME: ${{ inputs.noCommitHashFileName }}
         INPUT_WAITUNTIL: ${{ inputs.waitUntil }}
