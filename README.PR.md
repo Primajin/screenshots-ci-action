@@ -93,17 +93,21 @@ jobs:
     steps:
       - name: Delete assets older than 30 days
         run: |
+          set -euo pipefail
           cutoff=$(date -u -d '30 days ago' +%Y-%m-%dT%H:%M:%SZ)
-          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets" \
-            --jq '.[] | [.id, .created_at] | @tsv' |
-          while IFS=$'\t' read -r id created; do
-            if [[ "$created" < "$cutoff" ]]; then
+          # list first, then delete: deleting while the pages are still being read would skip assets
+          assets=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" \
+            --jq '.[] | [.id, .created_at] | @tsv')
+          echo "$assets" | while IFS=$'\t' read -r id created; do
+            if [[ -n "$id" && "$created" < "$cutoff" ]]; then
               gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$id"
             fi
           done
 ```
 
-Deleting an asset breaks the images of old comments that still point to it, so
+GitHub disables scheduled workflows after 60 days without activity in the
+repository; the `workflow_dispatch` trigger above lets you run the job by hand
+then. Deleting an asset breaks the images of old comments that still point to it, so
 choose a retention that is longer than your pull requests live. This
 repository's own CI uses a variant that only prunes once the release holds more
 than 600 assets, see [README.ci.md](README.ci.md#pruning).
@@ -150,7 +154,7 @@ jobs:
   default.
 - The trigger must be `pull_request`: the action takes the pull request number
   from the event. Without a pull request (a `push`, `workflow_dispatch`) nothing
-  is posted. The `types` shown are the default ones plus `reopened`.
+  is posted. The `types` shown are the defaults of `pull_request`, spelled out for clarity.
 - Without `release-id` nothing is uploaded or posted, and the log says so.
 - To upload without posting (for example from a `push` workflow), set
   `comment: false` together with `release-id`.
