@@ -7,17 +7,18 @@ branding:
 inputs:
   url:
     required: true
-    description: "The website URL you want to screenshot. e.x.: https://www.google.com/"
+    description: "The website URL you want to screenshot. e.g. https://www.google.com/"
   no-desktop:
     required: false
-    description: "Not screenshot website's desktop viewpoint"
+    description: "Skip the desktop screenshots and capture only the devices. Needs at least one device. Use true to switch it on."
     default: false
   devices:
     required: false
-    description: "Screenshot specific mobile devices viewpoint. e.x.: 'iPhone 13' 'Galaxy S III landscape' 'iPad Pro 11 landscape'. Any name from Playwright's device list."
+    description: "Mobile devices to capture, in addition to the desktop sizes. e.g. iPhone 13,Galaxy S III landscape,iPad Pro 11 landscape. Separate several devices with a comma. Any name from Playwright's device list; append ' landscape' for the landscape orientation. An unknown name fails the run."
+    default: ''
   full-page:
     required: false
-    description: "When true, takes a screenshot of the full scrollable page. Defaults to false"
+    description: "When true, takes a screenshot of the full scrollable page instead of the viewport. Defaults to false."
     default: false
   scroll-before-capture:
     required: false
@@ -29,11 +30,11 @@ inputs:
     default: '16000'
   type:
     required: false
-    description: "Specify screenshot type, can be either jpeg or png. Defaults to 'jpeg'."
+    description: "Screenshot file type: jpeg or png. Defaults to 'jpeg'."
     default: 'jpeg'
   no-commit-hash-file-name:
     required: false
-    description: "Screenshot filename don't include commit hash."
+    description: "Leave the commit hash out of the screenshot file names. Defaults to false."
     default: false
   wait-until:
     required: false
@@ -45,13 +46,16 @@ inputs:
     default: ''
   wait-for-selector-hidden:
     required: false
-    description: 'Wait for the selected element to not be found in the DOM or to be hidden, i.e. have display: none or visibility: hidden CSS properties.'
+    description: 'Wait for the selected element to not be found in the DOM or to be hidden, i.e. have display: none or visibility: hidden CSS properties. Needs wait-for-selector.'
+    default: false
   wait-for-selector-visible:
     required: false
-    description: 'Wait for the selected element to be present in DOM and to be visible, i.e. to not have display: none or visibility: hidden CSS properties.'
+    description: 'Wait for the selected element to be present in DOM and to be visible, i.e. to not have display: none or visibility: hidden CSS properties. Needs wait-for-selector; wins over wait-for-selector-hidden.'
+    default: false
   wait-for-selector-timeout:
     required: false
-    description: 'Maximum time to wait in milliseconds. Pass 0 to disable timeout.'
+    description: 'Maximum time to wait for the selector in milliseconds. Pass 0 to disable the timeout. Defaults to 30000.'
+    default: '30000'
   pre-script-path:
     required: false
     description: "Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving { browser, context, page, url }. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. See README.pre-script.md."
@@ -62,7 +66,7 @@ inputs:
     default: '30000'
   release-id:
     required: false
-    description: "GitHub Release id. Required to upload the screenshots to a PR comment (see README.PR.md)."
+    description: "Id of an existing, published GitHub release (a pre-release is fine) that the screenshots are uploaded to as assets. Needed for the PR comment, see README.PR.md. Also needs the GITHUB_TOKEN env."
     default: ''
   comment:
     required: false

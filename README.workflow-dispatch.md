@@ -1,6 +1,13 @@
-# Manually dispatch workflow
+# Run the workflow by hand (workflow_dispatch)
 
-## 1. Follow example setup your workflow
+[Back to the README](README.md)
+
+`workflow_dispatch` adds a **Run workflow** button to the Actions tab where you
+type the inputs yourself: handy to screenshot any URL on demand. The workflow
+file must be on the default branch for the button to appear.
+
+## 1. Add the workflow
+
 ```yaml
 name: Dispatch screenshots-action workflow
 on:
@@ -11,6 +18,9 @@ on:
         required: true
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
   screenshots:
     runs-on: ubuntu-latest
@@ -19,21 +29,23 @@ jobs:
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v4
       with:
-        url: ${{ github.event.inputs.url }}
+        url: ${{ inputs.url }}
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
 ```
 
-## 2. Go to Actions page, dispatch workflow
-![dispatch01](./asset/dispatch-workflow01.jpg)  
+## 2. Go to the Actions page and run it
 
+Pick the workflow in the left list, press **Run workflow**, fill in the form and
+start it. The screenshots are in the **Artifacts** section of the run.
 
-### More examples
-1. Input target URL
-2. setting mobile devices
-    - (generate desktop and mobiles screenshots)
+![The Run workflow form of a workflow_dispatch workflow](./asset/dispatch-workflow01.jpg)
+
+## More examples
+
+A URL and mobile devices (generates the desktop and the mobile screenshots):
 
 ```yaml
 name: Dispatch screenshots-action workflow
@@ -45,9 +57,12 @@ on:
         required: true
         default: ''
       devices:
-        description: 'Specific mobile devices. Use comma(,) to separate devices name. More info: https://github.com/flameddd/screenshots-ci-action'
+        description: 'Mobile devices, separated by commas (ex: iPhone 13,Pixel 7). Empty: desktop only'
         required: false
         default: ''
+
+permissions:
+  contents: read
 
 jobs:
   screenshots:
@@ -57,15 +72,16 @@ jobs:
     - name: screenshots-ci-action
       uses: Primajin/screenshots-ci-action@v4
       with:
-        url: ${{ github.event.inputs.url }}
-        devices: ${{ github.event.inputs.devices }}
+        url: ${{ inputs.url }}
+        devices: ${{ inputs.devices }}
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-screenshots
 ```
 
-Multiple URLs
+Two URLs in one run (every call writes into `screenshots/`, so the first
+call's files are removed before the second call):
 
 ```yaml
 name: Dispatch screenshots-action workflow
@@ -81,6 +97,9 @@ on:
         required: true
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
   screenshots:
     runs-on: ubuntu-latest
@@ -89,7 +108,7 @@ jobs:
     - name: screenshots-url1-action
       uses: Primajin/screenshots-ci-action@v4
       with:
-        url: ${{ github.event.inputs.url1 }}
+        url: ${{ inputs.url1 }}
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
@@ -99,12 +118,11 @@ jobs:
     - name: screenshots-url2-action
       uses: Primajin/screenshots-ci-action@v4
       with:
-        url: ${{ github.event.inputs.url2 }}
+        url: ${{ inputs.url2 }}
         devices: iPhone 6,iPhone 6 landscape
         no-desktop: true
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
         name: Download-url2-screenshots
-    - run: rm ./screenshots/*
 ```

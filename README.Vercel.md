@@ -1,16 +1,22 @@
-# Vercel Preview Deployment screenshots-ci-action
+# Screenshots of Vercel preview deployments
 
-Thanks for **Github** and **Vercel(Zeit)** hard work and great **collaboration**. We can hook **Vercel's preview deployment** via [deployment_status](https://docs.github.com/en/developers/webhooks-and-events/webhook-events-and-payloads#deployment_status) event   
+[Back to the README](README.md)
 
-## Config Examples
-- screenshot desktop for every **Vercel Preview Deployment**
+Vercel reports every deployment to GitHub, which triggers the
+[`deployment_status`](https://docs.github.com/en/webhooks/webhook-events-and-payloads#deployment_status)
+event. The workflow below runs when a deployment succeeded and takes screenshots
+of its URL (`target_url`).
 
 ```yaml
-# .github/workflows/example_screenshots-ci-action.yml
+# .github/workflows/screenshots.yml
 name: screenshots-ci-action Example
 on: deployment_status
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  screenshots:
     if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
@@ -24,3 +30,13 @@ jobs:
           path: screenshots
           name: Download-screenshots
 ```
+
+Notes:
+
+- The `deployment_status` event carries no pull request, so the
+  [PR comment](README.PR.md) of this action cannot be used with this trigger.
+  Use the artifact (as above) or [Telegram](README.Telegram.md).
+- A preview that is protected by Vercel (deployment protection, password) may
+  answer with a login page, and the action would capture that page.
+- Add inputs as usual, for example `devices`, `full-page` or
+  `wait-for-selector`, see [Inputs](README.md#inputs).

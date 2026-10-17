@@ -20,7 +20,7 @@ const LEGACY_WAITUNTIL_MAP = {
 };
 
 const DEVICES_DOCS_URL
-	= 'https://github.com/microsoft/playwright/blob/main/packages/playwright-core/src/server/deviceDescriptorsSource.json';
+	= 'https://github.com/microsoft/playwright/blob/main/packages/isomorphic/deviceDescriptorsSource.json';
 
 /**
  Resolve the `wait-until` input to a Playwright value.

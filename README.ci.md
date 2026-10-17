@@ -1,5 +1,7 @@
 # CI: self-testing scenarios
 
+[Back to the README](README.md)
+
 Every pull request runs the action against itself (`uses: ./`) for each option
 it offers. One reusable workflow per scenario lives in `.github/workflows`,
 named `_pass_<scenario>.yml` (must succeed) or `_fail_<scenario>.yml` (must
@@ -32,6 +34,53 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 
 Each scenario uploads its screenshots as a workflow artifact (7 days) and
 writes a table (file, format, dimensions, size) to the job summary.
+
+## Add a scenario
+
+1. Copy a small one such as `_pass_type.yml` to `_pass_<name>.yml` (or
+   `_fail_<name>.yml` for a run that must fail). It is a reusable workflow
+   (`on: workflow_call`) that serves the fixture site, runs `uses: ./` and
+   asserts on `screenshots/` with `assert-screenshots.mjs`.
+2. Add a job `pass-<name>` to `ci.yml` (same `if:` and `permissions:` as its
+   neighbours) and list it under `needs:` of `all-green`.
+3. Add a row to the table above.
+
+## Run the action on your machine
+
+The action is a plain Node program, so you can run it without GitHub Actions.
+You need Node 24 or newer and a Playwright Chromium:
+
+```shell
+npm ci
+npx playwright install chromium   # add --with-deps on Linux if system libraries are missing
+```
+
+The inputs are environment variables named `INPUT_<NAME>` (upper case, the
+dashes stay), which is how GitHub Actions hands them over. `env` can set names
+that contain a dash. No other variable is needed:
+
+```shell
+env INPUT_URL=https://example.com \
+  'INPUT_DEVICES=iPhone 13,iPad Pro 11 landscape' \
+  INPUT_NO-DESKTOP=true \
+  INPUT_FULL-PAGE=true \
+  node index.js
+```
+
+The screenshots land in `screenshots/` of the **current directory** (created if
+it does not exist; ignored by Git in this repository). Without `GITHUB_SHA` the
+file names end with a millisecond timestamp instead of the short commit hash.
+Without a `release-id` nothing is uploaded, and without `GITHUB_REPOSITORY` the
+GitHub related steps are skipped. To try the fixture site of this repository, serve it the way
+the `serve-fixtures` action does and capture
+`http://localhost:8080/?mode=tall`:
+
+```shell
+python3 -m http.server 8080 --directory .github/smoke-fixtures/site
+```
+
+Set `PRE_SCRIPT_PATH` (and `PRE_SCRIPT_TIMEOUT`) to try a pre-script. The unit
+tests (`npm test`) need neither a browser nor a network.
 
 ## Shared pieces
 
@@ -95,7 +144,7 @@ after the call started, and checks that an image URL is publicly downloadable
 (ranged GET, `image/*` or `application/octet-stream`). The comment must also
 carry the run's short commit sha (in the image URLs) and the head commit (in the
 footer). Because comments are edited in place, the comments of the tags above
-stay on the PR for its whole life, instead of one new comment per push. The
+stay on the PR for its whole life (one comment per tag). The
 job queues per pull request (`concurrency` with `cancel-in-progress: false`:
 one run executes and one waits; a newer run still replaces an older one that is
 waiting, which GitHub then shows as cancelled), because two runs with the same tag

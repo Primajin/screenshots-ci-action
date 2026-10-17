@@ -16,16 +16,16 @@ Telegram chat.
 > [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action)
 > (last released 2022). If you're weighing the two, here's what this fork brings:
 >
-> - 🐛 **`full-page: false` actually works.** The original bundles an old
+> - **`full-page: false` actually works.** The original bundles an old
 >   Puppeteer 14, which ignored `full-page: false` for emulated mobile devices
 >   and captured the whole scrollable page anyway (a single iPad Pro shot came
 >   out ~25 000 px tall). This fork runs on **Playwright** (Chromium), so
 >   viewport screenshots behave as documented.
-> - 🟢 **Current runtime.** A composite action that installs its own
+> - **Current runtime.** A composite action that installs its own
 >   dependencies and Chromium on **Node 24**; the original still targets the
 >   end-of-life `node16`.
-> - 📱 **Up-to-date device list** via Playwright's built-in device descriptors.
-> - 🚀 **Actively released** with
+> - **Up-to-date device list** via Playwright's built-in device descriptors.
+> - **Actively released** with
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
 >   major with `Primajin/screenshots-ci-action@v4`.
 >
@@ -36,42 +36,193 @@ Telegram chat.
 > `wait-until` values behave differently; see
 > [Migrating from v3](#migrating-from-v3).
 
-## Parameters
-| Name(type) | required(default) | Description |
-| ------------- | ------------- | ------------- |
-| `url`(string) | **required**(`""`) | The target website's URL to generate screenshots |
-| `devices`(string) | optional(`""`) | Specific mobile devices to generate screenshots. **Use comma(`,`) to separate devices name.** Device name list in below. |
-| `no-desktop`(boolean) | optional(`false`) | Set `true` if not require to get desktop viewpoint screenshots. |
-| `full-page`(boolean) | optional(`false`) | Set `true`, takes a screenshot of the full scrollable page. |
-| `scroll-before-capture`(boolean) | optional(`true`) | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
-| `max-image-height`(number) | optional(`16000`) | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. See [Tall pages](#tall-pages). |
-| `no-commit-hash-file-name`(boolean) | optional(`false`) | Set `true`, the filename would not have commit hash. |
-| `type`(string) | optional(`jpeg`) | Specify screenshot type, can be either `jpeg` or `png`. |
-| `wait-until`(string) | optional(`networkidle`) | When to consider navigation succeeded (Playwright values). <br> - `load`: consider navigation to be finished when the load event is fired.<br> - `domcontentloaded`: consider navigation to be finished when the DOMContentLoaded event is fired.<br> - `networkidle`: consider navigation to be finished when there are no network connections for at least `500` ms.<br> - `commit`: consider navigation to be finished when the network response is received and the document started loading. <br><br> The legacy Puppeteer values `networkidle0` and `networkidle2` are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the target website has **long polling requests**, since `networkidle` never settles there.|
-| `wait-for-selector`(string) | optional(`''`) | Wait for the **selector** to be attached to the DOM (Playwright state `attached`). If the **selector** doesn't appear after the `wait-for-selector-timeout` of waiting, it will take screenshots immediately. <br> See [README.waitForSelector](/README.waitForSelector.md) for example |
-| `wait-for-selector-timeout`(number) | optional(`30000`) | **WaitForSelector Options:** <br> Maximum time to wait in milliseconds. Pass `0` to disable timeout. <br> - `30000` means 30 seconds |
-| `wait-for-selector-visible`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to be present in DOM and to be visible (Playwright state `visible`), i.e. to not have `display: none` or `visibility: hidden` CSS properties. |
-| `wait-for-selector-hidden`(boolean) | optional(`false`) | **WaitForSelector Options:** <br> Wait for the selected element to not be found in the DOM or to be hidden (Playwright state `hidden`), i.e. have `display: none` or `visibility: hidden` CSS properties. |
-| `pre-script-path`(string) | optional(`''`) | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. <br> See [README.pre-script](/README.pre-script.md) for examples |
-| `pre-script-timeout`(number) | optional(`30000`) | Maximum time in milliseconds the pre-script may run before the action fails. Defaults to `30000`. |
-| `release-id`(string) | optional(`""`) | GitHub Release Id, it's required to upload screenshots to PR comment. see [README.PR](/README.PR.md) for more detail |
-| `comment`(boolean) | optional(`true`) | Post the uploaded screenshots to the pull request. `false`, `0`, `no` and `off` (any case) switch it off: the screenshots are still uploaded to the release (needs `release-id`), nothing is posted. See [PR comments](#pr-comments). |
-| `comment-layout`(string) | optional(`details`) | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
-| `comment-open`(string) | optional(`none`) | Layout `details` only: which sections start open. `none` (all closed, so the page stays short and does not jump while images load), `first` or `all`. |
-| `comment-group-by`(string) | optional(`capture`) | `capture`: one group per desktop size or device, with its parts inside. `all`: a single group with everything. `none`: one group per image. |
-| `comment-image-width`(number) | optional(`600`) | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. `0` leaves both attributes out. |
-| `comment-image-height`(string) | optional(`auto-ratio`) | `auto-ratio`: put `height` (from the aspect ratio) next to `width` on every image. `none`: put only the `width`. Use `none` if images look squashed in a narrow window, see [PR comments](#pr-comments). |
-| `comment-mode`(string) | optional(`update`) | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a PR keeps one comment that follows every push. `new`: always post a new comment. |
-| `comment-tag`(string) | optional(`screenshots`) | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
-| `comment-headline`(string) | optional(`Screenshots`) | Headline of the comment. |
-| `comment-footer`(boolean) | optional(`true`) | A small footer with the commit and a link to the workflow run. `false`, `0`, `no` and `off` switch it off. |
+## Contents
 
-## Envs
-| Name(type) | required(default) | Description |
-| ------------- | ------------- | ------------- |
-| `TELE_CHAT_ID`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
-| `TELE_BOT_TOKEN`(string) | optional(`""`) | Integration with **Telegram**. `screenshots-ci-action` will send screenshots to telegram. see [README.Telegram](/README.Telegram.md) for setting detail. |
-| `GITHUB_TOKEN`(string) | optional(`""`) | GitHub Actions token, it's required to upload screenshots to PR comment. See [README.PR](/README.PR.md) for more detail |
+- [Quick start](#quick-start)
+- [Inputs](#inputs) and [environment variables](#environment-variables)
+- [Output files](#output-files)
+- [Permissions, tokens and runners](#permissions-tokens-and-runners)
+- [Tall pages](#tall-pages) (`full-page`, `max-image-height`, `scroll-before-capture`)
+- [PR comments](#pr-comments) (`release-id`, `comment-*`)
+- [Examples](#examples)
+- [Devices and desktop sizes](#desktop-sizes)
+- [Migrating from v3](#migrating-from-v3)
+- [Development](#development)
+- [Result examples](#result-examples)
+
+Guides, one file each:
+
+| Guide | What it covers |
+| --- | --- |
+| [README.PR.md](README.PR.md) | Post the screenshots to a pull request: the release, `release-id`, permissions, forks |
+| [README.Telegram.md](README.Telegram.md) | Send the screenshots to a Telegram chat |
+| [README.pre-script.md](README.pre-script.md) | Log in, set cookies or dismiss a banner before the capture |
+| [README.wait-for-selector.md](README.wait-for-selector.md) | Wait for an element before the capture |
+| [README.workflow-dispatch.md](README.workflow-dispatch.md) | Run the workflow by hand with a URL you type in |
+| [README.Vercel.md](README.Vercel.md) | Screenshots of Vercel preview deployments |
+| [README.Netlify.md](README.Netlify.md) | Screenshots of Netlify preview deployments |
+| [README.ci.md](README.ci.md) | How this repository tests itself, and how to run the action locally |
+
+## Quick start
+
+```yaml
+name: screenshots
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: Primajin/screenshots-ci-action@v4
+      with:
+        url: https://example.com/
+        devices: iPhone 13,iPad Pro 11 landscape
+    - uses: actions/upload-artifact@v7
+      with:
+        name: screenshots
+        path: screenshots
+```
+
+This captures the 7 desktop sizes and two devices into `screenshots/` and
+uploads that directory as a workflow artifact (the Artifacts section of the
+run). `actions/checkout` is only needed when you use a
+[pre-script](README.pre-script.md); the other examples keep it for consistency.
+
+## Inputs
+
+All inputs are optional except `url`. How switches are read differs a little:
+
+- `no-desktop`, `full-page` and `no-commit-hash-file-name` are on only for exactly `true`; any other value is off.
+- `wait-for-selector-visible` and `wait-for-selector-hidden` are on for `true` in any case.
+- `scroll-before-capture`, `comment` and `comment-footer` are on by default and switched off by `false`, `0`, `no` or `off` (any case); other unknown values keep them on, with a warning for `comment` and `comment-footer`.
+
+### What to capture
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `url` | **required** | The website to capture. |
+| `devices` | `''` | Mobile devices to capture in addition to the desktop sizes. **Separate several names with a comma.** Any name from Playwright's device list, `iPhone 13` or `iPad Pro 11 landscape`; see [Supported mobile devices](#supported-mobile-devices). An unknown name fails the run. |
+| `no-desktop` | `false` | Set `true` to skip the 7 desktop sizes and capture only the devices (needs at least one device, otherwise nothing is captured). |
+| `full-page` | `false` | Set `true` to capture the whole scrollable page instead of the viewport. See [Tall pages](#tall-pages). |
+| `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
+| `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
+| `type` | `jpeg` | The file type, `jpeg` or `png`. |
+| `no-commit-hash-file-name` | `false` | Set `true` to leave the commit hash out of the file names. See [Output files](#output-files). |
+
+### When to capture
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `wait-until` | `networkidle` | When to consider the navigation succeeded (Playwright values). <br> - `load`: the load event was fired.<br> - `domcontentloaded`: the DOMContentLoaded event was fired.<br> - `networkidle`: no network connections for at least `500` ms.<br> - `commit`: the network response was received and the document started loading. <br><br> The values `networkidle0` and `networkidle2` of v3 are still accepted and both map to `networkidle`. Consider `load` or `domcontentloaded` when the website has **long polling requests**, since `networkidle` never settles there. |
+| `wait-for-selector` | `''` | Wait for this selector to be attached to the DOM (Playwright state `attached`). If it does not appear within `wait-for-selector-timeout`, the error is logged and the screenshots are taken anyway. See [README.wait-for-selector.md](README.wait-for-selector.md). |
+| `wait-for-selector-timeout` | `30000` | Maximum time to wait for the selector in milliseconds. `0` disables the timeout. |
+| `wait-for-selector-visible` | `false` | Wait for the element to be in the DOM **and** visible (no `display: none` or `visibility: hidden`), instead of only attached. Wins over `wait-for-selector-hidden`. |
+| `wait-for-selector-hidden` | `false` | Wait for the element to be gone from the DOM **or** hidden, instead of only attached. |
+| `pre-script-path` | `''` | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, for example to log in or to dismiss a cookie banner; the cookies and `localStorage` it sets are reused for every screenshot. See [README.pre-script.md](README.pre-script.md). |
+| `pre-script-timeout` | `30000` | Maximum time in milliseconds the pre-script may run before the action fails. `0` or an invalid value does **not** disable the timeout, it falls back to `30000`. |
+
+### Where the screenshots go
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `release-id` | `''` | Id of an existing, published GitHub release that the screenshots are uploaded to as assets; the PR comment shows these files. A long-lived pre-release shared by all pull requests works well. Needs the `GITHUB_TOKEN` env. See [README.PR.md](README.PR.md) and [PR comments](#pr-comments). |
+| `comment` | `true` | Post the uploaded screenshots to the pull request. `false`, `0`, `no` and `off` (any case) switch it off: the screenshots are still uploaded to the release (needs `release-id`), nothing is posted. |
+| `comment-layout` | `details` | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
+| `comment-open` | `none` | Layout `details` only: which sections start open. `none` (all closed, so the page stays short and does not jump while images load), `first` or `all`. |
+| `comment-group-by` | `capture` | `capture`: one group per desktop size or device, with its parts inside. `all`: a single group with everything. `none`: one group per image. |
+| `comment-image-width` | `600` | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. Images that would be taller than 2000 px at that width (the parts of a tall page) get only the `width`, see [PR comments](#pr-comments). `0` leaves both attributes out. |
+| `comment-image-height` | `auto-ratio` | `auto-ratio`: put `height` (from the aspect ratio) next to `width` on every image. `none`: put only the `width`. Use `none` if images look squashed in a narrow window, see [PR comments](#pr-comments). |
+| `comment-mode` | `update` | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a pull request keeps one comment that follows every push. `new`: always post a new comment. |
+| `comment-tag` | `screenshots` | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
+| `comment-headline` | `Screenshots` | Headline of the comment. |
+| `comment-footer` | `true` | A small footer with the commit and a link to the workflow run. `false`, `0`, `no` and `off` switch it off. |
+
+The action has no `outputs:`. Its result is the files in `screenshots/`, see
+[Output files](#output-files).
+
+## Environment variables
+
+Set them with `env:` on the step that uses the action.
+
+| Name | Default | Description |
+| --- | --- | --- |
+| `GITHUB_TOKEN` | `''` | `${{ secrets.GITHUB_TOKEN }}`. Needed to upload the screenshots to the release and to post the comment. See [README.PR.md](README.PR.md). |
+| `TELE_CHAT_ID` | `''` | Telegram chat, group or channel id. Together with `TELE_BOT_TOKEN` it sends the screenshots to Telegram. See [README.Telegram.md](README.Telegram.md). |
+| `TELE_BOT_TOKEN` | `''` | Telegram bot token. Keep it, and the chat id, in repository secrets. |
+
+Anything else you put in `env:` is passed to your [pre-script](README.pre-script.md).
+
+## Output files
+
+Screenshots are written to `screenshots/` in the workspace
+(`$GITHUB_WORKSPACE/screenshots/`); that directory is what you hand to
+`actions/upload-artifact`. The file names are:
+
+| Capture | File name |
+| --- | --- |
+| desktop | `desktopPage<width>x<height>-<sha>.<type>` (7 sizes, see [below](#desktop-sizes)) |
+| device | `<device name, spaces as _>-<sha>.<type>`, for example `iPhone_13-9890851.jpeg` |
+| tall page | `-part1`, `-part2`, ... before the `-<sha>`, see [Tall pages](#tall-pages) |
+
+`<sha>` is the first 7 characters of `GITHUB_SHA` (on `pull_request` events this
+is the merge commit of the pull request, not the head commit), or a millisecond
+timestamp when there is no `GITHUB_SHA`. `no-commit-hash-file-name: true`
+leaves it out. A second call of the action in the same job adds to the same
+directory, so remove the files in between if you upload them separately (see
+[Example 3](#example-3-two-urls-in-one-job)).
+
+There are three ways to get the screenshots out:
+
+1. Upload `screenshots/` as a workflow **artifact** (see the examples below).
+2. Post them to the **pull request** ([PR comments](#pr-comments)).
+3. Send them to a **Telegram** chat ([README.Telegram.md](README.Telegram.md)).
+
+## Permissions, tokens and runners
+
+**Permissions.** Capturing and uploading an artifact needs no more than
+`contents: read` (for `actions/checkout`). The release upload and the PR
+comment use the `GITHUB_TOKEN` and need more, so a workflow that posts to pull
+requests should say so (this is also needed when the default permissions of
+your repository or organisation are read-only):
+
+```yaml
+permissions:
+  contents: write       # upload the screenshots as release assets (release-id)
+  pull-requests: write  # post and edit the comment
+```
+
+A complete workflow is in [README.PR.md](README.PR.md#2-the-workflow). Telegram
+needs no token permissions, only the two secrets.
+
+**Pull requests from forks (and Dependabot).** GitHub gives these workflows a
+read-only token and no secrets, whatever `permissions:` says. Capturing
+works and the files are in `screenshots/` (so an artifact works), but the
+release upload fails, which is logged without failing the action, and no comment
+is posted; Telegram is not available either. Guard the PR comment step with
+`if: github.event.pull_request.head.repo.full_name == github.repository`, or
+accept that forks get an artifact only. See [README.PR.md](README.PR.md#3-pull-requests-from-forks-and-dependabot).
+
+**Runners.** The action is developed and tested on **`ubuntu-latest`**
+(GitHub-hosted, Ubuntu) only; that is what its CI runs. It installs Node 24
+(`actions/setup-node`), its npm dependencies and Chromium
+(`npx playwright install --with-deps chromium`) on every run; the browser download
+is cached by Playwright version. Known limits:
+
+- `--with-deps` installs system libraries with `apt`, so it needs a Debian or
+  Ubuntu runner and `sudo`. On a self-hosted Linux runner without `sudo`,
+  install Playwright's dependencies up front.
+- macOS and Windows runners are **untested**. Playwright's Chromium supports
+  them and the steps use `bash`, but the browser cache path of the action
+  (`~/.cache/ms-playwright`) is the Linux one, so there the browser is
+  downloaded on every run.
+- The container and the runner need network access to the page under test and,
+  for the first run, to the Playwright download.
 
 ## Tall pages
 
@@ -89,64 +240,95 @@ off with `scroll-before-capture: false` (accepted off values: `false`, `0`, `no`
 above `max-image-height` is captured as consecutive parts that together cover the page
 exactly, without gaps, overlap, cropping or downscaling. `max-image-height` counts
 **output pixels** and is between `100` and `16000` (default and ceiling
-`16000`); other values are clamped with a warning, and invalid values fall back
-to the default. Why a ceiling at all:
+`16000`); values above are lowered with a warning, `1` to `99` are raised to `100`, and
+`0`, negative or non-integer values fall back to the default. Why a ceiling at all:
 
 - Chromium documents a 16,384 device pixel texture limit that can bite on some
-  platforms and GPUs ([asfand-dev/aktion](https://github.com/asfand-dev/aktion)
-  measured a wrap on its runner; it does not reproduce everywhere).
+  platforms and GPUs (it does not reproduce everywhere).
 - GitHub's image proxy refuses comment images over 5 MB.
 - JPEG cannot be taller than 65,535 pixels.
 - One huge bitmap costs a lot of memory.
+
+What this means:
 
 - **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
   extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
   usual single image and name.
 - **PR comment:** the parts of one capture are listed together with their total
-  size (`part N of M`, and which parts failed to upload), and the images sit
-  directly next to each other; see [PR comments](#pr-comments).
+  size (`part N of M`, and which parts failed to upload), and the images are
+  **stacked one below the other** in one column, with only a thin white line
+  (the line break) between them; see
+  [PR comments](#pr-comments).
+- **Telegram:** each part is sent as its own photo. Telegram limits photos to
+  10 000 pixels width plus height, so lower `max-image-height` if parts are
+  rejected, see [README.Telegram.md](README.Telegram.md#telegrams-limits-for-photos).
 - **Size guard (JPEG parts):** a JPEG part above about 4.8 MB is captured again
   with a lower quality (80, 70, 60, 50, 40). A PNG part over 5 MB only logs a
   warning.
 
-**Behaviour change.** Pages taller than `max-image-height` (default `16000` output pixels)
-now produce `-partN` files instead of one file. `16000` is the ceiling, so
-there is no way to get one huge file: a single image that tall hits the limits
-above. Lower `max-image-height` for more, smaller parts.
-
-Note: another way to render everything is to resize the viewport to the height
-of the page before the capture (as aktion does). This action does not, because
-it changes the layout of everything sized in `vh`.
+**Behaviour change.** Pages taller than `max-image-height` now produce
+`-partN` files instead of one file, and `full-page` scrolls first. This can
+break workflows, see [Migrating from v3](#migrating-from-v3). Lower
+`max-image-height` for more, smaller parts; there is no way to get one image
+above `16000` pixels.
 
 ## PR comments
 
 With `release-id` and a `pull_request` workflow the action uploads every
 screenshot to the release and posts them to the pull request (see
-[README.PR](/README.PR.md) for the setup). The `comment-*` inputs decide how the
-comment looks and whether it is posted at all.
+[README.PR.md](README.PR.md) for the setup: the release, its id and the
+permissions). The `comment-*` inputs decide how the comment looks and whether it
+is posted at all.
+
+**The release (`release-id`).** The images live as assets of a GitHub release
+that you create once; the common pattern is a single, long-lived **pre-release**
+that is never shipped, used by every pull request (create it with
+`gh release create ci-screenshots --prerelease --latest=false`, read its id with
+`gh api repos/OWNER/REPO/releases/tags/ci-screenshots --jq .id`). Each run adds
+its files as new assets named `<ISO timestamp>-<file>` and never overwrites
+older ones. A release holds at most **1000 assets** and a run adds one per
+screenshot (9 for the Quick start), so prune old assets now and then; a
+scheduled workflow is in [README.PR.md](README.PR.md#asset-names-and-the-limit-of-1000-assets),
+and [README.ci.md](README.ci.md#pruning) shows the step this repository's CI uses.
 
 **Default: closed accordions, one comment per tag that is updated in place.**
 Each capture (a desktop size, a device, all parts of a tall page) is a
 collapsed `<details>` section, so the pull request page stays short and does not
 jump while the pictures load. The summary shows the name, the pixel size, the
-number of parts and the file size:
+number of parts and the file size. This is the real body of a comment of this
+repository's CI, a tall page captured in 3 parts:
 
 ```markdown
-<!-- screenshots-ci-action:screenshots -->
-### Screenshots
+<!-- screenshots-ci-action:tall -->
+### Tall page
 
 <details>
-<summary><b>iPhone 13</b> · 1,170 × 20,276 px · 3 parts · 4.2 MB</summary>
+<summary><b>iPad Pro 11</b> · 1,668 × 40,552 px · 3 parts · 3.2 MB</summary>
 
-- [part 1 of 3: open full size](https://github.com/.../iPhone_13-part1-9890851.jpeg)
-...
+- [part 1 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part1-4b74e9b.jpeg)
+- [part 2 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part2-4b74e9b.jpeg)
+- [part 3 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part3-4b74e9b.jpeg)
 
-<img src="https://github.com/.../iPhone_13-part1-9890851.jpeg" alt="iPhone 13, part 1 of 3" width="600"><br><img ...>
+<img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part1-4b74e9b.jpeg" alt="iPad Pro 11, part 1 of 3" width="600"><br><img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part2-4b74e9b.jpeg" alt="iPad Pro 11, part 2 of 3" width="600"><br><img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part3-4b74e9b.jpeg" alt="iPad Pro 11, part 3 of 3" width="600">
 
 </details>
 
-<sub>Commit 9890851 · [workflow run](https://github.com/.../actions/runs/1)</sub>
+<sub>Commit 698bebc · [workflow run](https://github.com/Primajin/screenshots-ci-action/actions/runs/39018348861)</sub>
 ```
+
+This is how it looks on the pull request, closed as posted and with one
+section opened (the images are the fixture page of this repository's CI):
+
+![The posted comment: a headline and one closed section per capture with name, pixel size and file size](./asset/pr-comment-closed.jpg)
+![The same comment with the Desktop 960 section opened: a link and the image](./asset/pr-comment-open.jpg)
+
+A tall page is one section with its parts **stacked** inside (they read as one
+continuous page), and `comment-layout: links` posts only a list of links:
+
+![A Tall page comment: one closed section saying 3 parts](./asset/pr-comment-tall-parts.jpg)
+![The Tall page section opened: the links of the parts and the top of part 1, which the other parts follow in one column](./asset/pr-comment-tall-parts-open.jpg)
+![The seam between part 1 and part 2: the two parts have the same width and sit in one column, with a thin white line between them](./asset/pr-comment-tall-parts-seam.jpg)
+![A links-only comment](./asset/pr-comment-links.jpg)
 
 Every image carries a `width` of at most `comment-image-width` CSS pixels
 (default 600) and, with the aspect ratio kept, a `height`, so the browser
@@ -155,8 +337,8 @@ height attribute is above 2000: it cuts the height to 2000 and scales the width
 down with it, so a tall part would turn into a narrow strip. Images that would be
 taller than 2000 pixels at the display width (the parts of a tall page) therefore
 get only the `width`; their height is known once they have loaded. The parts of
-one capture always stack, one below the other, with a line break between them and
-no gap, and read as one continuous page.
+one capture always stack, one below the other in one column (a `<br>` between
+them leaves a thin white line), and read as one continuous page.
 
 **Squashed images in narrow windows.** GitHub's CSS caps an image at the width of
 the comment column. In a very narrow window (a phone, a split screen) an image
@@ -173,6 +355,8 @@ because a page that does not jump is what the accordion is for.
   with:
     url: https://www.google.com/
     release-id: 63601424
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 # the first accordion starts open
 - uses: Primajin/screenshots-ci-action@v4
@@ -180,17 +364,23 @@ because a page that does not jump is what the accordion is for.
     url: https://www.google.com/
     release-id: 63601424
     comment-open: first
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
 
-# everything in a single accordion, or one accordion per image
+Other options, each added to the `with:` block of a call like the ones above:
+
+```yaml
+    # everything in a single accordion, or one accordion per image
     comment-group-by: all     # or: none
 
-# images directly under a heading, no accordion (like v3 did)
+    # images directly under a heading, no accordion (like v3 did)
     comment-layout: inline
 
-# only a list of links, no embedded images: the lightest comment
+    # only a list of links, no embedded images: the lightest comment
     comment-layout: links
 
-# no width and height on the images
+    # no width and height on the images
     comment-image-width: 0
 ```
 
@@ -218,12 +408,16 @@ usually a `comment-headline`):
     release-id: 63601424
     comment-tag: staging
     comment-headline: Staging
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 - uses: Primajin/screenshots-ci-action@v4
   with:
     url: https://staging.example.com/pricing
     release-id: 63601424
     comment-tag: pricing
     comment-headline: Pricing page
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 Calls with the **same** tag must not run in parallel (two jobs of a matrix, or two
@@ -253,32 +447,21 @@ or an invalid `comment-image-width` is logged as a warning and the default is
 used. Characters of `comment-tag` other than letters, digits (of any language),
 space, dot, dash and underscore are replaced with `-`, with a warning.
 
-## Output screenshots
-There are **3** different way to output files
-1. Upload to **Actions Artifacts**
-2. Send message to **Telegram** chat
-3. Comment in **PR**
+## Examples
 
-More full example in below
+Every example is a complete workflow. More are in the guides above.
 
-## Example 1
-About this example:
-- screenshot desktop and few specific devices
-- Upload screenshots to **Actions Artifacts**
-
-How to create new workflow
-1. At the root of your repository, create a directory named `.github/workflows` to store your workflow files.
-2. In `.github/workflows`, add a `.yml` or `.yaml` file for your workflow. For example, `.github/workflows/screenshots-workflow.yml`.
-
-More workflow info:
-- https://help.github.com/en/actions/configuring-and-managing-workflows/configuring-a-workflow
+### Example 1: desktop and a few devices, as an artifact
 
 ```yaml
 name: screenshots ci actions
 on:
   push:
     branches:
-    - master # Trigger flow when something pushed to master branch
+    - main # Trigger the workflow when something is pushed to main
+
+permissions:
+  contents: read
 
 jobs:
   screenshots:
@@ -290,20 +473,27 @@ jobs:
       with:
         url: https://github.com
         devices: iPhone 6,iPhone 6 landscape,Nexus 7,iPad Pro 11,Galaxy S III landscape,iPad Pro 11 landscape
-    - uses: actions/upload-artifact@v7 # Uplaod screenshots to Actions Artifacts via actions/upload-artifact@v7
+    - uses: actions/upload-artifact@v7 # Upload the screenshots to the Actions Artifacts
       with:
         path: screenshots
         name: Download-screenshots
 ```
 
-## Example 2(screenshot iphone 6, without desktop)
+To add the workflow: create `.github/workflows/screenshots-workflow.yml` (any
+`.yml` or `.yaml` name) in your repository and commit it, see
+[Workflow syntax](https://docs.github.com/en/actions/writing-workflows).
+
+### Example 2: iPhone 6 only, without desktop
 
 ```yaml
 name: screenshots ci actions
 on:
   push:
     branches:
-    - master
+    - main
+
+permissions:
+  contents: read
 
 jobs:
   screenshots:
@@ -322,16 +512,20 @@ jobs:
         name: Download-screenshots
 ```
 
-## Example 3 (multi URLs)
+### Example 3: two URLs in one job
+
 - URL 1: https://www.facebook.com/ (desktop)
-- URL 2: https://m.facebook.com/   (mobile (iPhone 6))
+- URL 2: https://m.facebook.com/ (mobile, iPhone 6)
 
 ```yaml
 name: screenshots ci actions
 on:
   push:
     branches:
-    - master
+    - main
+
+permissions:
+  contents: read
 
 jobs:
   screenshots:
@@ -345,8 +539,8 @@ jobs:
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
-        name: Download-desktop-screenshots # Put URL1 screenshots into Download-desktop-screenshots
-    - run: rm ./screenshots/* # Remove URL1 files
+        name: Download-desktop-screenshots # URL 1
+    - run: rm ./screenshots/* # Remove the files of URL 1, upload-artifact takes the whole directory
 
     - name: screenshots-mobile-facebook
       uses: Primajin/screenshots-ci-action@v4
@@ -357,24 +551,65 @@ jobs:
     - uses: actions/upload-artifact@v7
       with:
         path: screenshots
-        name: Download-mobile-screenshots # Put URL2 screenshots into Download-desktop-screenshots
+        name: Download-mobile-screenshots # URL 2
 ```
 
-## More examples (**Vercel**, **Netlify**)
-- [**Vercel** Preview Deployment screenhots](/README.Vercel.md)
-- [**Netlify** Preview Deployment screenhots](/README.Netlify.md)
-- [Integration with **Telegram**](/README.Telegram.md)
-- [Post screenshots into **PR comment**](/README.PR.md)
-- [Manually dispatch workflow](/README.workflow-dispatch.md)
+### Example 4: a pull request comment
 
-## Download screenshots (more result example in below)
-![img](./asset/download_screenshots_01.jpg)
-![img](./asset/download_screenshots_02.jpg)
+See [README.PR.md](README.PR.md) for the release and its id.
+
+```yaml
+name: screenshots ci actions
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: Primajin/screenshots-ci-action@v4
+      with:
+        url: https://www.google.com/
+        devices: iPhone 13
+        release-id: 63601424
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### More guides
+
+- [Post screenshots into a **PR comment**](README.PR.md)
+- [Integration with **Telegram**](README.Telegram.md)
+- [**Vercel** preview deployments](README.Vercel.md)
+- [**Netlify** preview deployments](README.Netlify.md)
+- [Run the workflow by hand](README.workflow-dispatch.md)
+- [Log in or set up the page first (pre-script)](README.pre-script.md)
+- [Wait for an element](README.wait-for-selector.md)
+
+## Download screenshots
+
+The screenshots of a run are in the **Artifacts** section at the bottom of the
+run's summary page (here one artifact per scenario of this repository's CI).
+Click an artifact name to download it as a zip file; the zip contains the image
+files of `screenshots/`.
+
+![The Artifacts section of a workflow run: a list of artifacts with name, size and digest](./asset/run-artifacts.jpg)
 
 ## Telegram
-![img](./asset/telegram4.jpg)
 
-## Desktop: auto-create all of these ratio
+![The screenshots in a Telegram chat](./asset/telegram4.jpg)
+
+## Desktop sizes
+
+Unless `no-desktop` is `true`, the page is captured at all of these viewport
+sizes (device scale factor 1), one image per size:
+
 - width: 540px, height: 405px
 - width: 600px, height: 450px
 - width: 720px, height: 540px
@@ -386,7 +621,7 @@ jobs:
 ### Supported mobile devices
 
 The `devices` input accepts any name from
-[Playwright's device list](https://github.com/microsoft/playwright/blob/main/packages/playwright-core/src/server/deviceDescriptorsSource.json)
+[Playwright's device list](https://github.com/microsoft/playwright/blob/main/packages/isomorphic/deviceDescriptorsSource.json)
 (`playwright.devices`). Pass the base name for portrait, or append
 ` landscape` for the landscape orientation (e.g. `iPad Pro 11 landscape`).
 Separate several devices with a comma. Names are matched exactly; a name that
@@ -395,28 +630,6 @@ Playwright.
 
 An **unknown device name fails the run** and the error lists close matches
 ("did you mean ...") together with the link above.
-
-#### Migrating from the Puppeteer based versions (v3 and earlier)
-
-Playwright's list differs from Puppeteer's `KnownDevices`:
-
-| Puppeteer name (removed) | Use instead |
-| ------------- | ------------- |
-| `iPad` | `iPad (gen 5)`, `iPad (gen 6)`, `iPad (gen 7)` or `iPad (gen 11)` |
-| `iPad Pro` | `iPad Pro 11` |
-| `iPhone 4`, `iPhone 5` | no equivalent, closest is `iPhone 6` |
-| `JioPhone 2` | no equivalent |
-
-Playwright additionally knows many newer devices (iPhone 16/17 family, Pixel
-6-10, Galaxy S24, Galaxy Z Fold/Flip, ...) and the `Desktop Chrome`,
-`Desktop Edge`, `Desktop Firefox` and `Desktop Safari` profiles. Names that
-exist in both lists (for example `iPhone 13`, `Pixel 5`, `Galaxy S III`) keep
-working, but their emulated viewport/user agent may differ slightly between
-Puppeteer's and Playwright's data.
-
-Other behaviour changes: `wait-until: networkidle0` and `networkidle2` both map
-to Playwright's `networkidle` (see the parameter table), and each device is
-rendered in its own browser context.
 
 <details>
 <summary>Base devices known to Playwright (as of Playwright 1.64; append ` landscape` for the landscape variant)</summary>
@@ -521,12 +734,23 @@ rendered in its own browser context.
 `Pixel 10 Pro`
 `Pixel 10 Pro XL`
 `Moto G4`
+`Desktop Chrome HiDPI`
+`Desktop Edge HiDPI`
+`Desktop Firefox HiDPI`
+`Desktop Safari`
+`Desktop Chrome`
+`Desktop Edge`
+`Desktop Firefox`
+
+The `Desktop ...` entries are desktop browser profiles. The action always
+renders with Chromium, so the Firefox and Safari ones only change the
+viewport, user agent and scale factor.
 
 </details>
 
 ## Migrating from v3
 
-v4 replaces Puppeteer with Playwright. Outputs are the same, but five things
+v4 replaces Puppeteer with Playwright. Outputs are the same, but six things
 can change in an existing workflow:
 
 1. **Input names are now kebab-case**, matching the GitHub Actions convention.
@@ -550,20 +774,23 @@ can change in an existing workflow:
 
    (`preScriptPath` and `preScriptTimeout` were added after v3; they only
    exist in the kebab-case form in any released version.)
-2. **Device names** now come from Playwright's list. `iPad`, `iPad Pro`,
-   `iPhone 4`, `iPhone 5` and `JioPhone 2` no longer exist (see the
-   [replacement table](#migrating-from-the-puppeteer-based-versions-v3-and-earlier)),
-   and an unknown name now **fails the run** with "did you mean" suggestions
-   instead of being skipped.
+2. **Device names** now come from Playwright's list (see the table below). An
+   unknown name now **fails the run** with "did you mean" suggestions instead
+   of being skipped.
 3. **`wait-until`**: `networkidle0` and `networkidle2` are still accepted but
    both map to Playwright's single `networkidle`. The default is now
-   `networkidle`. `commit` is new.
+   `networkidle`. `commit` is new. Playwright's `networkidle` waits for **no**
+   network connection for 500 ms, whereas `networkidle2` allowed up to two. A page
+   that settled under `networkidle2` but keeps one or two connections open (long
+   polling, websockets, analytics beacons) may now never settle: the navigation
+   hits its 30 second timeout, and a navigation timeout **fails the run**. Switch
+   such pages to `wait-until: load` or `domcontentloaded` (add `wait-for-selector`
+   if you need a specific element).
 4. **Composite action**: the action installs its own dependencies and Chromium
    (`npx playwright install --with-deps chromium`) instead of running a bundled
    `dist/` on the Node runtime. You no longer need a Chrome/puppeteer install
    step (e.g. `mujo-code/puppeteer-headful`) in your workflow, and
    `PUPPETEER_EXECUTABLE_PATH` / `CHROME_BIN` are no longer honoured.
-
 5. **The PR comment is updated in place** (behaviour change). v3 posted a new
    comment with plain `<img>` tags for every push. v4 keeps one comment per
    `comment-tag` and edits it on the next push, with a closed `<details>` section
@@ -573,9 +800,38 @@ can change in an existing workflow:
    readable name instead of the asset name); see
    [PR comments](#pr-comments). Several calls of the action on one pull request
    now need different `comment-tag`s, or they overwrite each other's comment.
+6. **Tall full page captures are split into parts (breaking for name based
+   consumers).** `full-page: true` now first scrolls through the page
+   (`scroll-before-capture`, on by default), and a page taller than
+   `max-image-height` (default `16000` output pixels) is written as
+   `<name>-part1-<sha>.jpeg`, `-part2`, ... instead of one `<name>-<sha>.jpeg`.
+   Anything that matches the old single file by name (a script, an artifact
+   path, an upload step) finds nothing for tall pages. The files that fit keep
+   their name. Details: [Tall pages](#tall-pages).
 
 Also new: `wait-for-selector-timeout: 0` now really disables the timeout (it used
-to fall back to 30 seconds), and `release-id` is a declared input.
+to fall back to 30 seconds) and `release-id` is a declared input.
+
+### Migrating device names from the Puppeteer based versions (v3 and earlier)
+
+Playwright's list differs from Puppeteer's `KnownDevices`. All other devices of
+the v3 list exist in Playwright's list under the same name (checked against
+Playwright 1.64):
+
+| Puppeteer name (removed) | Use instead |
+| ------------- | ------------- |
+| `iPad` | `iPad (gen 5)`, `iPad (gen 6)`, `iPad (gen 7)` or `iPad (gen 11)` |
+| `iPad Pro` | `iPad Pro 11` |
+| `iPhone 4`, `iPhone 5` | no equivalent, closest is `iPhone 6` |
+| `JioPhone 2` | no equivalent |
+
+Playwright additionally knows many newer devices (iPhone 16/17 family, Pixel
+6-10, Galaxy S24, Galaxy Z Fold/Flip, ...) and the `Desktop Chrome`,
+`Desktop Edge`, `Desktop Firefox` and `Desktop Safari` profiles. Names that
+exist in both lists (for example `iPhone 13`, `Pixel 5`, `Galaxy S III`) keep
+working, but their emulated viewport/user agent may differ slightly between
+Puppeteer's and Playwright's data. Each device is rendered in its own browser
+context.
 
 ## Development
 
@@ -585,31 +841,51 @@ and tested with [Vitest](https://vitest.dev/).
 ```bash
 npm ci
 npm run lint        # xo (npm run lint:fix to auto-fix)
-npm test            # unit tests
+npm test            # unit tests (vitest run), no browser or network needed
 npm run coverage    # unit tests with coverage
 ```
 
+- **Layout.** `action.yml` is a composite action: it installs the npm
+  dependencies and Chromium, then runs `index.js`. `capture.js` (scrolling,
+  tall pages), `comment.js`, `comment-options.js` and `pr-comment.js` (the PR
+  comment), `telegram.js`, `pre-script.js`, `image-size.js` and `utils.js` hold
+  the rest; every module has a `*.test.js` next to it.
+- **Scenarios.** Every option has a self-test: a reusable workflow
+  `.github/workflows/_pass_<scenario>.yml` (or `_fail_...`) that runs the action
+  against a local fixture site and asserts on the images. They run on every pull
+  request. See [README.ci.md](README.ci.md) for the list, how to add one and
+  **how to run the action on your own machine with Playwright**.
+- **Commits and releases.** Pull request titles follow
+  [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
+  `docs:`, `feat!:` for a breaking change);
+  [release-please](https://github.com/googleapis/release-please) turns them into
+  the changelog and the version, and moves the major tag (`v4`) after a release.
+- **Changing an input** means changing `action.yml`, the matching env line in its
+  `Take screenshots` step, `index.js`, and the Inputs tables above in the same
+  pull request.
+
 ## Result examples
+
 ### desktop (600x450)
-![img](./asset/desktopPage600x450-9890851.png)
+![desktop 600x450](./asset/desktopPage600x450-9890851.png)
 
 ### desktop (960x720)
-![img](./asset/desktopPage960x720-9890851.png)
+![desktop 960x720](./asset/desktopPage960x720-9890851.png)
 
 ### desktop (1140x640)
-![img](./asset/desktopPage1140x640-9890851.png)
+![desktop 1140x640](./asset/desktopPage1140x640-9890851.png)
 
 ### desktop (1920x1080)
-![img](./asset/desktopPage1920x1080-9890851.png)
+![desktop 1920x1080](./asset/desktopPage1920x1080-9890851.png)
 
 ### mobile (iPhone_6_landscape)
-![img](./asset/iPhone_6_landscape-9890851.png)
+![iPhone 6 landscape](./asset/iPhone_6_landscape-9890851.png)
 
 ### mobile (iPhone_6)
-![img](./asset/iPhone_6-9890851.png)
+![iPhone 6](./asset/iPhone_6-9890851.png)
 
 ### mobile (Nexus_7)
-![img](./asset/Nexus_7-9890851.png)
+![Nexus 7](./asset/Nexus_7-9890851.png)
 
 ### mobile (iPhone_6, full-page)
 github.com is 27,560 px tall on an iPhone 6 (2x), above the 16,000 px limit of
@@ -618,6 +894,6 @@ one image, so the capture is two parts (`iPhone_6-part1-9890851.jpeg` and
 [Tall pages](#tall-pages)):
 
 <p align="center">
-  <img width="240" align="top" src="asset/iPhone_6-part1-9890851.jpeg" />
-  <img width="240" align="top" src="asset/iPhone_6-part2-9890851.jpeg" />
+  <img width="240" align="top" src="asset/iPhone_6-part1-9890851.jpeg" alt="iPhone 6, part 1 of 2" />
+  <img width="240" align="top" src="asset/iPhone_6-part2-9890851.jpeg" alt="iPhone 6, part 2 of 2" />
 </p>
