@@ -18,7 +18,7 @@ jobs:
       - name: Wait for #late to become visible
         uses: ./
         with:
-          url: http://localhost:8080/late.html
+          url: http://localhost:8080/?mode=late
           fullPage: true
           waitForSelector: '#late'
           waitForSelectorVisible: true
@@ -30,7 +30,7 @@ jobs:
       - name: Wait for #spinner to be hidden
         uses: ./
         with:
-          url: http://localhost:8080/late.html
+          url: http://localhost:8080/?mode=late
           fullPage: true
           waitForSelector: '#spinner'
           waitForSelectorHidden: true
@@ -42,7 +42,7 @@ jobs:
       - name: Wait for #late with timeout 0 (timeout disabled)
         uses: ./
         with:
-          url: http://localhost:8080/late.html
+          url: http://localhost:8080/?mode=late
           fullPage: true
           waitForSelector: '#late'
           waitForSelectorTimeout: 0
@@ -54,7 +54,7 @@ jobs:
       - name: Time out waiting (the screenshot is taken anyway)
         uses: ./
         with:
-          url: http://localhost:8080/late.html
+          url: http://localhost:8080/?mode=late
           noDesktop: true
           devices: iPhone 13
           fullPage: true

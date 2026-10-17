@@ -35,7 +35,7 @@ jobs:
       - name: Assert desktop and device screenshots exist
         run: |
           node .github/scripts/assert-screenshots.mjs --title "Pre-script login" --expect-count 8 --expect-from-name 'desktopPage*' --type png
-          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-*' --expect-count 1 --min-height 1900 --max-height 2000
+          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-*' --expect-count 1 --expect 'iPhone_13-*=1170x1992'
       - name: Assert the session cookie reached the desktop and the device capture
         run: |
           test -f _login-requests.log || { echo '::error::No server log'; exit 1; }

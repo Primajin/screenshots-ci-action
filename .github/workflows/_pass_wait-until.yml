@@ -18,7 +18,7 @@ jobs:
       - name: Take screenshots with domcontentloaded
         uses: ./
         with:
-          url: http://localhost:8080/
+          url: http://localhost:8080/?mode=wait-until
           waitUntil: domcontentloaded
       - name: Assert 7 desktop screenshots
         run: |
@@ -28,7 +28,7 @@ jobs:
       - name: Run with legacy networkidle0 and capture the log
         shell: bash
         env:
-          INPUT_URL: http://localhost:8080/
+          INPUT_URL: http://localhost:8080/?mode=wait-until
           INPUT_NODESKTOP: true
           INPUT_DEVICES: iPhone 13
           INPUT_WAITUNTIL: networkidle0
@@ -43,7 +43,7 @@ jobs:
       - name: Run with an unknown value and capture the log
         shell: bash
         env:
-          INPUT_URL: http://localhost:8080/
+          INPUT_URL: http://localhost:8080/?mode=wait-until
           INPUT_NODESKTOP: true
           INPUT_DEVICES: iPhone 13
           INPUT_WAITUNTIL: bogus
