@@ -5,7 +5,12 @@ import path from 'node:path';
 import process from 'node:process';
 import {describe, expect, it} from 'vitest';
 import {renderComment} from '../../comment.js';
-import {checkComments, findTagged, parseComments} from './assert-pr-comment.mjs';
+import {
+	checkComments,
+	findTagged,
+	normalizeArgs,
+	parseComments,
+} from './assert-pr-comment.mjs';
 
 const BOT = 'github-actions[bot]';
 const SCRIPT = path.join(import.meta.dirname, 'assert-pr-comment.mjs');
@@ -41,6 +46,11 @@ describe('findTagged', () => {
 		];
 		expect(findTagged(comments, 'screenshots').map(item => item.id)).toEqual([1]);
 		expect(findTagged(comments, 'screenshots-2').map(item => item.id)).toEqual([4]);
+	});
+
+	it('accepts a Windows line break after the marker', () => {
+		const windows = comment(1, body.replace('-->\n', '-->\r\n'));
+		expect(findTagged([windows], 'screenshots')).toHaveLength(1);
 	});
 });
 
@@ -115,6 +125,23 @@ describe('checkComments', () => {
 	});
 });
 
+describe('normalizeArgs', () => {
+	it('joins the value of a string option, also when it starts with a dash', () => {
+		expect(normalizeArgs(['--contains', '-abc1234.', '--tag', 'x', '--sized-images', '--images=3', '--not-contains=-y'])).toEqual([
+			'--contains=-abc1234.',
+			'--tag=x',
+			'--sized-images',
+			'--images=3',
+			'--not-contains=-y',
+		]);
+	});
+
+	it('leaves a trailing option and unknown arguments alone', () => {
+		expect(normalizeArgs(['--tag'])).toEqual(['--tag']);
+		expect(normalizeArgs(['--nope', 'x'])).toEqual(['--nope', 'x']);
+	});
+});
+
 describe('the command line', () => {
 	const run = (comments, args) => {
 		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-pr-comment-'));
@@ -135,6 +162,26 @@ describe('the command line', () => {
 		const untagged = run([comment(11)], []);
 		expect(untagged.status).toBe(2);
 		expect(untagged.stderr).toContain('--tag is required');
+	});
+
+	it('takes values that start with a dash, in both forms (the workflow passes the file sha like that)', () => {
+		const spaced = run([comment(14)], ['--tag', 'screenshots', '--contains', '-abc1234.', '--not-contains', '-zzz9999.']);
+		expect(spaced.status).toBe(0);
+		const joined = run([comment(14)], ['--tag', 'screenshots', '--contains=-abc1234.', '--not-contains=-zzz9999.']);
+		expect(joined.status).toBe(0);
+		const missing = run([comment(14)], ['--tag', 'screenshots', '--contains', '-zzz9999.']);
+		expect(missing.status).toBe(1);
+		expect(missing.stderr).toContain('The comment does not contain: -zzz9999.');
+	});
+
+	it('reports bad arguments as an annotation instead of crashing', () => {
+		const unknown = run([comment(15)], ['--tag', 'screenshots', '--nope']);
+		expect(unknown.status).toBe(2);
+		expect(unknown.stderr).toContain('::error::');
+		const noValue = run([comment(15)], ['--tag']);
+		expect(noValue.status).toBe(2);
+		expect(noValue.stderr).toContain('::error::');
+		expect(noValue.stderr).not.toContain('at ');
 	});
 
 	it('writes body and id files', () => {

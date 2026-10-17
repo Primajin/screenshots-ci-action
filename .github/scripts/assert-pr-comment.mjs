@@ -32,7 +32,7 @@ export function findTagged(comments, tag) {
 	return comments.filter(comment =>
 		comment.login === BOT
 		&& typeof comment.body === 'string'
-		&& (comment.body === marker || comment.body.startsWith(`${marker}\n`)),
+		&& (comment.body === marker || comment.body.startsWith(`${marker}\n`) || comment.body.startsWith(`${marker}\r\n`)),
 	);
 }
 
@@ -125,26 +125,50 @@ export function checkComments(comments, spec) {
 	};
 }
 
+const OPTIONS = {
+	tag: {type: 'string'},
+	comments: {type: 'string'},
+	'expect-comments': {type: 'string'},
+	'expect-id': {type: 'string'},
+	'not-id': {type: 'string'},
+	images: {type: 'string'},
+	'no-images': {type: 'boolean'},
+	'details-closed': {type: 'boolean'},
+	'sized-images': {type: 'boolean'},
+	contains: {type: 'string', multiple: true},
+	'not-contains': {type: 'string', multiple: true},
+	'write-body': {type: 'string'},
+	'write-id': {type: 'string'},
+	title: {type: 'string'},
+};
+
+// Util.parseArgs refuses `--contains -abc1234.` (a value that starts with a
+// dash looks like an option to it). Join every `--name value` of a string option
+// to `--name=value`, which it accepts for any value, so both forms work.
+export function normalizeArgs(argv) {
+	const result = [];
+	for (let index = 0; index < argv.length; index++) {
+		const argument = argv[index];
+		const name = argument.startsWith('--') ? argument.slice(2) : undefined;
+		if (name !== undefined && OPTIONS[name]?.type === 'string' && index + 1 < argv.length) {
+			result.push(`${argument}=${argv[++index]}`);
+		} else {
+			result.push(argument);
+		}
+	}
+
+	return result;
+}
+
 function run(argv) {
-	const {values} = parseArgs({
-		args: argv,
-		options: {
-			tag: {type: 'string'},
-			comments: {type: 'string'},
-			'expect-comments': {type: 'string'},
-			'expect-id': {type: 'string'},
-			'not-id': {type: 'string'},
-			images: {type: 'string'},
-			'no-images': {type: 'boolean'},
-			'details-closed': {type: 'boolean'},
-			'sized-images': {type: 'boolean'},
-			contains: {type: 'string', multiple: true},
-			'not-contains': {type: 'string', multiple: true},
-			'write-body': {type: 'string'},
-			'write-id': {type: 'string'},
-			title: {type: 'string'},
-		},
-	});
+	let values;
+	try {
+		({values} = parseArgs({args: normalizeArgs(argv), options: OPTIONS}));
+	} catch (error) {
+		console.error(`::error::${error.message}`);
+		return 2;
+	}
+
 	if (!values.tag) {
 		console.error('::error::--tag is required');
 		return 2;
@@ -192,6 +216,7 @@ function run(argv) {
 	return result.failures.length === 0 ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// Compare real paths, so a symlinked checkout does not turn the script into a silent no-op
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
 	process.exitCode = run(process.argv.slice(2));
 }
