@@ -9,10 +9,10 @@ import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
 import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
-import {commentMarker, renderComment} from './comment.js';
+import {buildCommentBody, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
-import {publishComment} from './pr-comment.js';
+import {publishComment, shouldUpload} from './pr-comment.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -299,9 +299,6 @@ async function run() {
 	}
 }
 
-// GitHub rejects comment bodies above 65536 characters
-const MAX_COMMENT_LENGTH = 65_000;
-
 // Where the footer points: the commit under review and this workflow run
 function buildFooter(pullRequest) {
 	const {GITHUB_SERVER_URL: server, GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId} = process.env;
@@ -373,10 +370,9 @@ async function uploadAndCommentImages(files, commentOptions) {
 				...commentOptions,
 				footer: commentOptions.footer ? buildFooter(pull_request) : null,
 			};
-			let body = renderComment(uploaded, files, renderOptions);
-			if (body.length > MAX_COMMENT_LENGTH && renderOptions.layout !== 'links') {
-				console.warn(`The comment has ${body.length} characters, more than GitHub allows; posting only links instead of the images.`);
-				body = renderComment(uploaded, files, {...renderOptions, layout: 'links'});
+			const {body, warnings} = buildCommentBody(uploaded, files, renderOptions);
+			for (const message of warnings) {
+				console.warn(message);
 			}
 
 			const result = await publishComment(octokit, {
@@ -420,13 +416,19 @@ async function postProcesses(commentOptions) {
 	} = github.context;
 	const releaseId = core.getInput('release-id') || '';
 
-	if (
-		Boolean(owner)
-		&& Boolean(repo)
-		&& (Boolean(pull_request) || !commentOptions.comment)
-		&& Boolean(releaseId)
-		&& process.env.GITHUB_TOKEN
-	) {
+	const decision = shouldUpload({
+		owner,
+		repo,
+		releaseId,
+		token: process.env.GITHUB_TOKEN,
+		pullRequest: pull_request,
+		comment: commentOptions.comment,
+	});
+	if (decision.notice) {
+		console.log(decision.notice);
+	}
+
+	if (decision.upload) {
 		await uploadAndCommentImages(files, commentOptions);
 	}
 }

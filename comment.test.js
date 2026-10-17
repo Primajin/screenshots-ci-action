@@ -1,5 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {
+	MAX_COMMENT_LENGTH,
+	buildCommentBody,
 	captureLabel,
 	commentMarker,
 	displaySize,
@@ -309,7 +311,7 @@ describe('image width', () => {
 		expect(body).toContain('<summary><b>a</b> · 1 KB</summary>');
 	});
 
-	it('reproduces the former plain comment with inline, no width and no footer', () => {
+	it('gets close to the former plain comment with inline, no width and no footer (heading and marker differ)', () => {
 		const body = renderComment(
 			[entry('iPhone_13-abc1234.jpeg', 'https://x/b.jpeg')],
 			['iPhone_13-abc1234.jpeg'],
@@ -318,6 +320,112 @@ describe('image width', () => {
 		expect(body).toBe(
 			'<!-- screenshots-ci-action:screenshots -->\n### Screenshots\n\n#### iPhone 13 · 1 KB\n\n- https://x/b.jpeg\n\n<img src="https://x/b.jpeg" alt="iPhone 13">\n\n',
 		);
+	});
+});
+
+describe('image height', () => {
+	it('puts only the width with none', () => {
+		const body = renderComment(uploaded, files, {imageHeight: 'none'});
+		expect(body).toContain('alt="Desktop 540" width="540">');
+		expect(body).toContain('alt="iPhone 13, part 1 of 3" width="600">');
+		expect(body).not.toContain('height=');
+	});
+
+	it('puts both with auto-ratio and by default', () => {
+		for (const options of [{}, {imageHeight: 'auto-ratio'}]) {
+			expect(renderComment(uploaded, files, options)).toContain('alt="Desktop 540" width="540" height="405">');
+		}
+	});
+
+	it('still has no attributes at all with a width of 0', () => {
+		expect(renderComment(uploaded, files, {imageWidth: 0, imageHeight: 'none'})).not.toContain('width=');
+	});
+});
+
+describe('narrow parts', () => {
+	const partFiles = ['a-part1.jpeg', 'a-part2.jpeg'];
+	const parts = width => partFiles.map(name => entry(name, `https://x/${name}`, 1024, {width, height: 1000}));
+
+	it('stacks parts that would sit side by side with a line break', () => {
+		const body = renderComment(parts(1000), partFiles, {imageWidth: 300});
+		expect(body).toMatch(/width="300" height="300"><br><img /v);
+		const natural = renderComment(parts(375), partFiles);
+		expect(natural).toContain('><br><img ');
+	});
+
+	it('puts nothing between wide parts, so they read as one page', () => {
+		const body = renderComment(parts(1000), partFiles, {imageWidth: 600});
+		expect(body).not.toContain('<br>');
+		expect(body).toContain('><img ');
+		expect(renderComment(parts(1000), partFiles, {imageWidth: 0})).not.toContain('<br>');
+	});
+
+	it('does not break a single image', () => {
+		expect(renderComment([entry('a.jpeg', 'https://x/a', 1024, {width: 300, height: 10})], ['a.jpeg'])).not.toContain('<br>');
+	});
+});
+
+describe('buildCommentBody', () => {
+	const many = Array.from({length: 40}, (_, index) => `d${String(index).padStart(2, '0')}-abc1234.jpeg`);
+	const manyEntries = many.map(name => entry(name, `https://example.com/${'x'.repeat(100)}/${name}`, 2048, {width: 800, height: 600}));
+
+	it('returns the normal body when it fits, without warnings', () => {
+		const result = buildCommentBody(uploaded, files, {layout: 'details'});
+		expect(result.body).toBe(renderComment(uploaded, files, {layout: 'details'}));
+		expect(result.warnings).toEqual([]);
+	});
+
+	it('returns an empty body when nothing was uploaded', () => {
+		expect(buildCommentBody([], files, {})).toEqual({body: '', warnings: []});
+	});
+
+	it('uses the default limit of 65000 characters', () => {
+		expect(MAX_COMMENT_LENGTH).toBe(65_000);
+	});
+
+	it('falls back to links when the body is too long', () => {
+		const full = renderComment(manyEntries, many, {layout: 'details'});
+		const links = renderComment(manyEntries, many, {layout: 'links'});
+		const limit = Math.floor((full.length + links.length) / 2);
+		const result = buildCommentBody(manyEntries, many, {layout: 'details'}, limit);
+		expect(result.body).toBe(links);
+		expect(result.body).not.toContain('<img');
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings[0]).toContain('only links');
+	});
+
+	it('cuts the list with "...and N more" when even the links are too long', () => {
+		const links = renderComment(manyEntries, many, {layout: 'links'});
+		const limit = Math.floor(links.length / 2);
+		const result = buildCommentBody(manyEntries, many, {layout: 'inline'}, limit);
+		expect(result.body.length).toBeLessThanOrEqual(limit);
+		expect(result.body).toMatch(/…and \d+ more images not shown/v);
+		expect(result.body).not.toContain('failed to upload');
+		expect(result.body.startsWith('<!-- screenshots-ci-action:screenshots -->\n')).toBe(true);
+		expect(result.warnings).toHaveLength(2);
+		expect(result.warnings[1]).toContain(' of 40 images are not listed');
+		// The count in the text is the number that is really missing
+		const shown = (result.body.match(/\]\(https/gv) ?? []).length;
+		const omitted = Number(/…and (?<count>\d+) more/v.exec(result.body).groups.count);
+		expect(shown + omitted).toBe(40);
+	});
+
+	it('cuts the list for the links layout too', () => {
+		const result = buildCommentBody(manyEntries, many, {layout: 'links'}, 2000);
+		expect(result.body.length).toBeLessThanOrEqual(2000);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings[0]).toContain('links alone');
+	});
+
+	it('never exceeds the limit, even when nothing fits', () => {
+		const result = buildCommentBody(manyEntries, many, {headline: 'h'.repeat(500)}, 300);
+		expect(result.body.length).toBeLessThanOrEqual(300);
+	});
+
+	it('shows a failed capture note among the images that remain', () => {
+		const partFiles = ['a-part1.jpeg', 'a-part2.jpeg', ...many];
+		const result = buildCommentBody([entry('a-part1.jpeg', 'https://x/a1'), ...manyEntries], partFiles, {}, 3000);
+		expect(result.body).toContain('part 2 failed to upload');
 	});
 });
 

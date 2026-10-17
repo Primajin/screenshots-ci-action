@@ -84,6 +84,10 @@ inputs:
     required: false
     description: "Widest display width in CSS pixels of an image in the comment. Every image gets width and height attributes from its real size (aspect ratio kept, never enlarged), so the page does not reflow while images load. 0 leaves the attributes out. Default 600."
     default: '600'
+  comment-image-height:
+    required: false
+    description: "auto-ratio (default) puts height next to width on every image, so the page does not jump. none puts only the width: use it if images look squashed in a narrow window (GitHub caps an image at the column width, which a fixed height does not follow)."
+    default: 'auto-ratio'
   comment-mode:
     required: false
     description: "update (default) edits the comment this action posted earlier on the pull request (found by comment-tag), new always posts a new comment."
@@ -155,6 +159,7 @@ runs:
         INPUT_COMMENT-OPEN: ${{ inputs.comment-open }}
         INPUT_COMMENT-GROUP-BY: ${{ inputs.comment-group-by }}
         INPUT_COMMENT-IMAGE-WIDTH: ${{ inputs.comment-image-width }}
+        INPUT_COMMENT-IMAGE-HEIGHT: ${{ inputs.comment-image-height }}
         INPUT_COMMENT-MODE: ${{ inputs.comment-mode }}
         INPUT_COMMENT-TAG: ${{ inputs.comment-tag }}
         INPUT_COMMENT-HEADLINE: ${{ inputs.comment-headline }}

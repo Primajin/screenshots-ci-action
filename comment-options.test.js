@@ -14,6 +14,7 @@ describe('resolveCommentOptions', () => {
 			open: 'none',
 			groupBy: 'capture',
 			imageWidth: 600,
+			imageHeight: 'auto-ratio',
 			mode: 'update',
 			tag: 'screenshots',
 			headline: 'Screenshots',
@@ -63,10 +64,28 @@ describe('resolveCommentOptions', () => {
 			expect(resolve({'comment-footer': off}).options.footer).toBe(false);
 		}
 
-		for (const on of ['true', 'yes', '1', 'whatever']) {
-			expect(resolve({comment: on}).options.comment).toBe(true);
-			expect(resolve({'comment-footer': on}).options.footer).toBe(true);
+		for (const on of ['true', 'TRUE', 'yes', '1', 'on']) {
+			const {options, warnings} = resolve({comment: on, 'comment-footer': on});
+			expect(options).toMatchObject({comment: true, footer: true});
+			expect(warnings).toEqual([]);
 		}
+	});
+
+	it('warns about a switch value that is neither true nor false, and keeps the default', () => {
+		const {options, warnings} = resolve({comment: 'fasle', 'comment-footer': 'maybe'});
+		expect(options).toMatchObject({comment: true, footer: true});
+		expect(warnings).toEqual([
+			'Unknown comment "fasle"; use true or false. Using "true".',
+			'Unknown comment-footer "maybe"; use true or false. Using "true".',
+		]);
+	});
+
+	it('parses the image height enum', () => {
+		expect(resolve({'comment-image-height': 'NONE'}).options.imageHeight).toBe('none');
+		expect(resolve({'comment-image-height': 'auto-ratio'}).options.imageHeight).toBe('auto-ratio');
+		const bad = resolve({'comment-image-height': 'auto'});
+		expect(bad.options.imageHeight).toBe('auto-ratio');
+		expect(bad.warnings).toEqual(['Unknown comment-image-height "auto"; use auto-ratio, none. Using "auto-ratio".']);
 	});
 
 	it('parses the image width', () => {
@@ -93,12 +112,25 @@ describe('resolveCommentOptions', () => {
 	it('uses the tag and falls back to the default for an empty one', () => {
 		expect(resolve({'comment-tag': 'tall'}).options.tag).toBe('tall');
 		expect(resolve({'comment-tag': ' '}).options.tag).toBe('screenshots');
+		expect(resolve({'comment-tag': 'tall'}).warnings).toEqual([]);
+	});
+
+	it('warns when the tag had to be changed', () => {
+		const {options, warnings} = resolve({'comment-tag': 'a/b>c'});
+		expect(options.tag).toBe('a-b-c');
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('"a/b>c"');
+		expect(warnings[0]).toContain('"a-b-c"');
 	});
 });
 
 describe('sanitizeTag', () => {
 	it('keeps words, dots, dashes and spaces', () => {
 		expect(sanitizeTag('my tag.v2-a_b')).toBe('my tag.v2-a_b');
+	});
+
+	it('keeps letters and digits of any language', () => {
+		expect(sanitizeTag('Übersicht 日本語 ٣')).toBe('Übersicht 日本語 ٣');
 	});
 
 	it('cannot close the hidden HTML comment', () => {

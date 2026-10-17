@@ -25,6 +25,7 @@ const DEFAULT_OPTIONS = {
 	open: 'none',
 	groupBy: 'capture',
 	imageWidth: 600,
+	imageHeight: 'auto-ratio',
 	headline: 'Screenshots',
 	tag: 'screenshots',
 	footer: null,
@@ -96,9 +97,17 @@ function displaySize({width, height}, imageWidth) {
 	return {width: shown, height: Math.max(1, Math.round((height * shown) / width))};
 }
 
-function sizeAttributes(entry, imageWidth) {
+// Width and height, or only the width with imageHeight 'none' (GitHub's CSS
+// caps an image at the column width, which squashes one that has both)
+function sizeAttributes(entry, {imageWidth, imageHeight}) {
 	const shown = displaySize(entry, imageWidth);
-	return shown ? ` width="${shown.width}" height="${shown.height}"` : '';
+	if (!shown) {
+		return '';
+	}
+
+	return imageHeight === 'none'
+		? ` width="${shown.width}"`
+		: ` width="${shown.width}" height="${shown.height}"`;
 }
 
 // Pixel size of a capture: as wide as its widest part, as tall as all parts.
@@ -163,10 +172,10 @@ function partSuffix(capture, entry) {
 	return entry.part === null ? '' : `part ${entry.part} of ${capture.total}`;
 }
 
-function imageTag(capture, entry, imageWidth) {
+function imageTag(capture, entry, settings) {
 	const suffix = partSuffix(capture, entry);
 	const alt = escapeHtml(suffix ? `${capture.label}, ${suffix}` : capture.label);
-	return `<img src="${escapeHtml(entry.url)}" alt="${alt}"${sizeAttributes(entry, imageWidth)}>`;
+	return `<img src="${escapeHtml(entry.url)}" alt="${alt}"${sizeAttributes(entry, settings)}>`;
 }
 
 function formatDimensions(dimensions) {
@@ -222,8 +231,23 @@ function buildGroups(captures, groupBy) {
 	});
 }
 
+// Images up to this display width would sit two side by side in a comment
+// (about 830 CSS pixels wide), which breaks the read-from-top-to-bottom order of
+// the parts of one capture, so they get a line break between them
+const SIDE_BY_SIDE_MAX = 400;
+
+function isNarrow(capture, imageWidth) {
+	const widths = capture.entries.map(entry => entry.width).filter(Boolean);
+	if (capture.entries.length < 2 || widths.length === 0) {
+		return false;
+	}
+
+	const widest = Math.max(...widths);
+	return (imageWidth ? Math.min(widest, imageWidth) : widest) <= SIDE_BY_SIDE_MAX;
+}
+
 // Links and images of one group (details and inline layout)
-function renderBody(group, imageWidth) {
+function renderBody(group, settings) {
 	const sections = group.captures.map(capture => {
 		const heading = group.combined
 			? `**${escapeHtml(capture.label)}** · ${joinMeta([
@@ -237,8 +261,8 @@ function renderBody(group, imageWidth) {
 			return `- ${suffix ? `${suffix}: ` : ''}${entry.url}`;
 		});
 		const images = capture.entries
-			.map(entry => imageTag(capture, entry, imageWidth))
-			.join('');
+			.map(entry => imageTag(capture, entry, settings))
+			.join(isNarrow(capture, settings.imageWidth) ? '<br>' : '');
 		return `${heading}${links.join('\n')}\n\n${images}\n\n`;
 	});
 	return sections.join('');
@@ -261,11 +285,11 @@ function renderGroup(group, index, options) {
 	const meta = escapeHtml(group.meta);
 	if (options.layout === 'details') {
 		const open = isOpen(options.open, index) ? ' open' : '';
-		return `<details${open}>\n<summary><b>${title}</b> · ${meta}</summary>\n\n${renderBody(group, options.imageWidth)}</details>\n\n`;
+		return `<details${open}>\n<summary><b>${title}</b> · ${meta}</summary>\n\n${renderBody(group, options)}</details>\n\n`;
 	}
 
 	if (options.layout === 'inline') {
-		return `#### ${title} · ${meta}\n\n${renderBody(group, options.imageWidth)}`;
+		return `#### ${title} · ${meta}\n\n${renderBody(group, options)}`;
 	}
 
 	if (group.combined) {
@@ -310,7 +334,7 @@ function renderWarnings(captures, lost, groupBy) {
  Render the PR comment.
  @param {{fileName: string, name: string, url: string, bytes: number, width?: number, height?: number}[]} uploaded The uploaded images (fileName is the local file name).
  @param {string[]} allFiles Every local file name, so failed parts are known.
- @param {object} [options] layout, open, groupBy, imageWidth, headline, tag and footer ({sha, runUrl} or null).
+ @param {object} [options] layout, open, groupBy, imageWidth, imageHeight, headline, tag, footer ({sha, runUrl} or null) and omitted (a count shown as "...and N more").
  @returns {string} The markdown, starting with the hidden marker line; empty when nothing was uploaded.
  */
 function renderComment(uploaded, allFiles, options = {}) {
@@ -328,13 +352,82 @@ function renderComment(uploaded, allFiles, options = {}) {
 		`### ${escapeHtml(settings.headline)}\n\n`,
 		// A bullet list needs no trailing blank line per item, close it once
 		settings.layout === 'links' ? `${list.join('')}\n` : list.join(''),
+		settings.omitted > 0
+			? `…and ${settings.omitted} more image${settings.omitted === 1 ? '' : 's'} not shown, see the release assets.\n\n`
+			: '',
 		renderWarnings(captures, lost, settings.groupBy),
 		renderFooter(settings.footer),
 	].join('');
 }
 
+// GitHub rejects comment bodies above 65536 characters
+const MAX_COMMENT_LENGTH = 65_000;
+
+/**
+ Render the comment so that it fits what GitHub accepts: when the body is too
+ long it is rendered as links only, and when even that is too long the list is
+ cut with "...and N more", so createComment never fails on the length.
+ @param {object[]} uploaded The uploaded images.
+ @param {string[]} allFiles Every local file name.
+ @param {object} options The render options.
+ @param {number} [limit] Longest body in characters.
+ @returns {{body: string, warnings: string[]}} The body (empty when nothing was uploaded) and what to tell the user.
+ */
+function buildCommentBody(uploaded, allFiles, options, limit = MAX_COMMENT_LENGTH) {
+	const body = renderComment(uploaded, allFiles, options);
+	if (body.length <= limit) {
+		return {body, warnings: []};
+	}
+
+	const warnings = [];
+	if (options.layout !== 'links') {
+		const links = renderComment(uploaded, allFiles, {...options, layout: 'links'});
+		warnings.push(`The comment has ${body.length} characters, more than GitHub allows; posting only links instead of the images.`);
+		if (links.length <= limit) {
+			return {body: links, warnings};
+		}
+	}
+
+	const cut = shortenLinks(uploaded, allFiles, options, limit);
+	return {body: cut.body, warnings: [...warnings, ...cut.warnings]};
+}
+
+// Links layout, with as many images as fit
+function shortenLinks(uploaded, allFiles, options, limit) {
+	const render = count => {
+		const hidden = new Set(uploaded.slice(count).map(entry => entry.fileName));
+		return renderComment(
+			uploaded.slice(0, count),
+			// Images that are only left out must not be reported as failed uploads
+			allFiles.filter(fileName => !hidden.has(fileName)),
+			{...options, layout: 'links', omitted: uploaded.length - count},
+		);
+	};
+
+	// The number of images that fit is found by bisection
+	let low = 0;
+	let high = uploaded.length;
+	while (low < high) {
+		const middle = Math.ceil((low + high) / 2);
+		if (render(middle).length <= limit) {
+			low = middle;
+		} else {
+			high = middle - 1;
+		}
+	}
+
+	// Nothing fits only with an absurd headline or url: cut the text itself
+	const fitted = render(Math.max(low, 1));
+	return {
+		body: fitted.slice(0, limit),
+		warnings: [`The links alone are more than GitHub allows; ${uploaded.length - low} of ${uploaded.length} images are not listed.`],
+	};
+}
+
 export {
 	DEFAULT_OPTIONS,
+	MAX_COMMENT_LENGTH,
+	buildCommentBody,
 	captureLabel,
 	commentMarker,
 	displaySize,
