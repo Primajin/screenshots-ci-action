@@ -16,16 +16,16 @@ Telegram chat.
 > [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action)
 > (last released 2022). If you're weighing the two, here's what this fork brings:
 >
-> - 🐛 **`full-page: false` actually works.** The original bundles an old
+> - **`full-page: false` actually works.** The original bundles an old
 >   Puppeteer 14, which ignored `full-page: false` for emulated mobile devices
 >   and captured the whole scrollable page anyway (a single iPad Pro shot came
 >   out ~25 000 px tall). This fork runs on **Playwright** (Chromium), so
 >   viewport screenshots behave as documented.
-> - 🟢 **Current runtime.** A composite action that installs its own
+> - **Current runtime.** A composite action that installs its own
 >   dependencies and Chromium on **Node 24**; the original still targets the
 >   end-of-life `node16`.
-> - 📱 **Up-to-date device list** via Playwright's built-in device descriptors.
-> - 🚀 **Actively released** with
+> - **Up-to-date device list** via Playwright's built-in device descriptors.
+> - **Actively released** with
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
 >   major with `Primajin/screenshots-ci-action@v4`.
 >
@@ -96,7 +96,11 @@ run). `actions/checkout` is only needed when you use a
 
 ## Inputs
 
-All inputs are optional except `url`. Boolean inputs take `true` or `false`.
+All inputs are optional except `url`. How switches are read differs a little:
+
+- `no-desktop`, `full-page` and `no-commit-hash-file-name` are on only for exactly `true`; any other value is off.
+- `wait-for-selector-visible` and `wait-for-selector-hidden` are on for `true` in any case.
+- `scroll-before-capture`, `comment` and `comment-footer` are on by default and switched off by `false`, `0`, `no` or `off` (any case); other unknown values keep them on, with a warning for `comment` and `comment-footer`.
 
 ### What to capture
 
@@ -107,7 +111,7 @@ All inputs are optional except `url`. Boolean inputs take `true` or `false`.
 | `no-desktop` | `false` | Set `true` to skip the 7 desktop sizes and capture only the devices (needs at least one device, otherwise nothing is captured). |
 | `full-page` | `false` | Set `true` to capture the whole scrollable page instead of the viewport. See [Tall pages](#tall-pages). |
 | `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
-| `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. See [Tall pages](#tall-pages). |
+| `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
 | `type` | `jpeg` | The file type, `jpeg` or `png`. |
 | `no-commit-hash-file-name` | `false` | Set `true` to leave the commit hash out of the file names. See [Output files](#output-files). |
 
@@ -121,7 +125,7 @@ All inputs are optional except `url`. Boolean inputs take `true` or `false`.
 | `wait-for-selector-visible` | `false` | Wait for the element to be in the DOM **and** visible (no `display: none` or `visibility: hidden`), instead of only attached. Wins over `wait-for-selector-hidden`. |
 | `wait-for-selector-hidden` | `false` | Wait for the element to be gone from the DOM **or** hidden, instead of only attached. |
 | `pre-script-path` | `''` | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, for example to log in or to dismiss a cookie banner; the cookies and `localStorage` it sets are reused for every screenshot. See [README.pre-script.md](README.pre-script.md). |
-| `pre-script-timeout` | `30000` | Maximum time in milliseconds the pre-script may run before the action fails. |
+| `pre-script-timeout` | `30000` | Maximum time in milliseconds the pre-script may run before the action fails. `0` or an invalid value does **not** disable the timeout, it falls back to `30000`. |
 
 ### Where the screenshots go
 
@@ -132,7 +136,7 @@ All inputs are optional except `url`. Boolean inputs take `true` or `false`.
 | `comment-layout` | `details` | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
 | `comment-open` | `none` | Layout `details` only: which sections start open. `none` (all closed, so the page stays short and does not jump while images load), `first` or `all`. |
 | `comment-group-by` | `capture` | `capture`: one group per desktop size or device, with its parts inside. `all`: a single group with everything. `none`: one group per image. |
-| `comment-image-width` | `600` | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. `0` leaves both attributes out. |
+| `comment-image-width` | `600` | Widest display width in CSS pixels. Every `<img>` gets `width` and `height` from the real pixel size (aspect ratio kept, never enlarged), so the page does not reflow when the images load. Images that would be taller than 2000 px at that width (the parts of a tall page) get only the `width`, see [PR comments](#pr-comments). `0` leaves both attributes out. |
 | `comment-image-height` | `auto-ratio` | `auto-ratio`: put `height` (from the aspect ratio) next to `width` on every image. `none`: put only the `width`. Use `none` if images look squashed in a narrow window, see [PR comments](#pr-comments). |
 | `comment-mode` | `update` | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a pull request keeps one comment that follows every push. `new`: always post a new comment. |
 | `comment-tag` | `screenshots` | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
@@ -236,22 +240,25 @@ off with `scroll-before-capture: false` (accepted off values: `false`, `0`, `no`
 above `max-image-height` is captured as consecutive parts that together cover the page
 exactly, without gaps, overlap, cropping or downscaling. `max-image-height` counts
 **output pixels** and is between `100` and `16000` (default and ceiling
-`16000`); other values are clamped with a warning, and invalid values fall back
-to the default. Why a ceiling at all:
+`16000`); values above are lowered with a warning, `1` to `99` are raised to `100`, and
+`0`, negative or non-integer values fall back to the default. Why a ceiling at all:
 
 - Chromium documents a 16,384 device pixel texture limit that can bite on some
-  platforms and GPUs ([asfand-dev/aktion](https://github.com/asfand-dev/aktion)
-  measured a wrap on its runner; it does not reproduce everywhere).
+  platforms and GPUs (it does not reproduce everywhere).
 - GitHub's image proxy refuses comment images over 5 MB.
 - JPEG cannot be taller than 65,535 pixels.
 - One huge bitmap costs a lot of memory.
+
+What this means:
 
 - **Names:** `-part1`, `-part2`, ... are inserted before the commit hash and the
   extension, for example `iPhone_13-part1-9890851.jpeg`. Pages that fit keep the
   usual single image and name.
 - **PR comment:** the parts of one capture are listed together with their total
-  size (`part N of M`, and which parts failed to upload), and the images sit
-  directly next to each other; see [PR comments](#pr-comments).
+  size (`part N of M`, and which parts failed to upload), and the images are
+  **stacked one below the other** in one column, with only a thin white line
+  (the line break) between them; see
+  [PR comments](#pr-comments).
 - **Telegram:** each part is sent as its own photo. Telegram limits photos to
   10 000 pixels width plus height, so lower `max-image-height` if parts are
   rejected, see [README.Telegram.md](README.Telegram.md#telegrams-limits-for-photos).
@@ -259,14 +266,11 @@ to the default. Why a ceiling at all:
   with a lower quality (80, 70, 60, 50, 40). A PNG part over 5 MB only logs a
   warning.
 
-**Behaviour change.** Pages taller than `max-image-height` (default `16000` output pixels)
-now produce `-partN` files instead of one file. `16000` is the ceiling, so
-there is no way to get one huge file: a single image that tall hits the limits
-above. Lower `max-image-height` for more, smaller parts.
-
-Note: another way to render everything is to resize the viewport to the height
-of the page before the capture (as aktion does). This action does not, because
-it changes the layout of everything sized in `vh`.
+**Behaviour change.** Pages taller than `max-image-height` now produce
+`-partN` files instead of one file, and `full-page` scrolls first. This can
+break workflows, see [Migrating from v3](#migrating-from-v3). Lower
+`max-image-height` for more, smaller parts; there is no way to get one image
+above `16000` pixels.
 
 ## PR comments
 
@@ -291,23 +295,25 @@ and [README.ci.md](README.ci.md#pruning) shows the step this repository's CI use
 Each capture (a desktop size, a device, all parts of a tall page) is a
 collapsed `<details>` section, so the pull request page stays short and does not
 jump while the pictures load. The summary shows the name, the pixel size, the
-number of parts and the file size:
+number of parts and the file size. This is the real body of a comment of this
+repository's CI, a tall page captured in 3 parts:
 
 ```markdown
-<!-- screenshots-ci-action:screenshots -->
-### Screenshots
+<!-- screenshots-ci-action:tall -->
+### Tall page
 
 <details>
-<summary><b>iPhone 13</b> · 1,170 × 20,276 px · 3 parts · 4.2 MB</summary>
+<summary><b>iPad Pro 11</b> · 1,668 × 40,552 px · 3 parts · 3.2 MB</summary>
 
-- [part 1 of 3: open full size](https://github.com/.../iPhone_13-part1-9890851.jpeg)
-...
+- [part 1 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part1-4b74e9b.jpeg)
+- [part 2 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part2-4b74e9b.jpeg)
+- [part 3 of 3: open full size](https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part3-4b74e9b.jpeg)
 
-<img src="https://github.com/.../iPhone_13-part1-9890851.jpeg" alt="iPhone 13, part 1 of 3" width="600"><br><img ...>
+<img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part1-4b74e9b.jpeg" alt="iPad Pro 11, part 1 of 3" width="600"><br><img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part2-4b74e9b.jpeg" alt="iPad Pro 11, part 2 of 3" width="600"><br><img src="https://github.com/Primajin/screenshots-ci-action/releases/download/ci-screenshots/2026-10-17T08.43.10.275Z-iPad_Pro_11-part3-4b74e9b.jpeg" alt="iPad Pro 11, part 3 of 3" width="600">
 
 </details>
 
-<sub>Commit 9890851 · [workflow run](https://github.com/.../actions/runs/1)</sub>
+<sub>Commit 698bebc · [workflow run](https://github.com/Primajin/screenshots-ci-action/actions/runs/39018348861)</sub>
 ```
 
 This is how it looks on the pull request, closed as posted and with one
@@ -316,11 +322,12 @@ section opened (the images are the fixture page of this repository's CI):
 ![The posted comment: a headline and one closed section per capture with name, pixel size and file size](./asset/pr-comment-closed.jpg)
 ![The same comment with the Desktop 960 section opened: a link and the image](./asset/pr-comment-open.jpg)
 
-A tall page is one section with its parts side by side inside, and
-`comment-layout: links` posts only a list of links:
+A tall page is one section with its parts **stacked** inside (they read as one
+continuous page), and `comment-layout: links` posts only a list of links:
 
 ![A Tall page comment: one closed section saying 3 parts](./asset/pr-comment-tall-parts.jpg)
-![The Tall page section opened: the links of the parts and the first images](./asset/pr-comment-tall-parts-open.jpg)
+![The Tall page section opened: the links of the parts and the top of part 1, which the other parts follow in one column](./asset/pr-comment-tall-parts-open.jpg)
+![The seam between part 1 and part 2: the two parts have the same width and sit in one column, with a thin white line between them](./asset/pr-comment-tall-parts-seam.jpg)
 ![A links-only comment](./asset/pr-comment-links.jpg)
 
 Every image carries a `width` of at most `comment-image-width` CSS pixels
@@ -330,8 +337,8 @@ height attribute is above 2000: it cuts the height to 2000 and scales the width
 down with it, so a tall part would turn into a narrow strip. Images that would be
 taller than 2000 pixels at the display width (the parts of a tall page) therefore
 get only the `width`; their height is known once they have loaded. The parts of
-one capture always stack, one below the other, with a line break between them and
-no gap, and read as one continuous page.
+one capture always stack, one below the other in one column (a `<br>` between
+them leaves a thin white line), and read as one continuous page.
 
 **Squashed images in narrow windows.** GitHub's CSS caps an image at the width of
 the comment column. In a very narrow window (a phone, a split screen) an image
@@ -743,7 +750,7 @@ viewport, user agent and scale factor.
 
 ## Migrating from v3
 
-v4 replaces Puppeteer with Playwright. Outputs are the same, but five things
+v4 replaces Puppeteer with Playwright. Outputs are the same, but six things
 can change in an existing workflow:
 
 1. **Input names are now kebab-case**, matching the GitHub Actions convention.
@@ -772,7 +779,13 @@ can change in an existing workflow:
    of being skipped.
 3. **`wait-until`**: `networkidle0` and `networkidle2` are still accepted but
    both map to Playwright's single `networkidle`. The default is now
-   `networkidle`. `commit` is new.
+   `networkidle`. `commit` is new. Playwright's `networkidle` waits for **no**
+   network connection for 500 ms, whereas `networkidle2` allowed up to two. A page
+   that settled under `networkidle2` but keeps one or two connections open (long
+   polling, websockets, analytics beacons) may now never settle: the navigation
+   hits its 30 second timeout, and a navigation timeout **fails the run**. Switch
+   such pages to `wait-until: load` or `domcontentloaded` (add `wait-for-selector`
+   if you need a specific element).
 4. **Composite action**: the action installs its own dependencies and Chromium
    (`npx playwright install --with-deps chromium`) instead of running a bundled
    `dist/` on the Node runtime. You no longer need a Chrome/puppeteer install
@@ -787,11 +800,17 @@ can change in an existing workflow:
    readable name instead of the asset name); see
    [PR comments](#pr-comments). Several calls of the action on one pull request
    now need different `comment-tag`s, or they overwrite each other's comment.
+6. **Tall full page captures are split into parts (breaking for name based
+   consumers).** `full-page: true` now first scrolls through the page
+   (`scroll-before-capture`, on by default), and a page taller than
+   `max-image-height` (default `16000` output pixels) is written as
+   `<name>-part1-<sha>.jpeg`, `-part2`, ... instead of one `<name>-<sha>.jpeg`.
+   Anything that matches the old single file by name (a script, an artifact
+   path, an upload step) finds nothing for tall pages. The files that fit keep
+   their name. Details: [Tall pages](#tall-pages).
 
 Also new: `wait-for-selector-timeout: 0` now really disables the timeout (it used
-to fall back to 30 seconds), `release-id` is a declared input, and
-full page captures of tall pages are split into parts (see
-[Tall pages](#tall-pages)).
+to fall back to 30 seconds) and `release-id` is a declared input.
 
 ### Migrating device names from the Puppeteer based versions (v3 and earlier)
 
