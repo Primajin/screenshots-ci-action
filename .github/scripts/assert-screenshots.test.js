@@ -14,11 +14,13 @@ import {
 import {
 	analyzePng,
 	checkScreenshots,
+	colorFraction,
 	compareSliced,
 	decodePng,
 	detectFormat,
 	globToRegExp,
 	main,
+	parseColorSpec,
 	parseImage,
 	toMarkdown,
 } from './assert-screenshots.mjs';
@@ -750,6 +752,143 @@ describe('compareSliced', () => {
 			expect(main(['--compare-sliced', a, b])).toBe(0);
 			expect(main(['--compare-sliced', a, c])).toBe(1);
 			expect(() => main(['--compare-sliced', a])).toThrow('two directories');
+		} finally {
+			vi.restoreAllMocks();
+		}
+	});
+});
+
+describe('parseColorSpec', () => {
+	it('reads the colour, the region and the fractions', () => {
+		expect(parseColorSpec('FF8800')).toEqual({
+			spec: 'FF8800',
+			hex: 'ff8800',
+			rgb: [255, 136, 0],
+			region: undefined,
+			min: 0.5,
+			max: 1,
+		});
+		expect(parseColorSpec('00ff00@10,20,30,40:0.9')).toMatchObject({
+			rgb: [0, 255, 0],
+			region: {
+				x: 10, y: 20, width: 30, height: 40,
+			},
+			min: 0.9,
+			max: 1,
+		});
+		expect(parseColorSpec('ff00ff:0-0.01')).toMatchObject({min: 0, max: 0.01});
+		expect(parseColorSpec('ff00ff:.25')).toMatchObject({min: 0.25});
+	});
+
+	it('refuses a malformed spec or fractions out of order', () => {
+		for (const spec of ['', 'red', 'ff00f', '#ff00ff', 'ff00ff@1,2,3', 'ff00ff:x', 'ff00ff:']) {
+			expect(() => parseColorSpec(spec), spec).toThrow('Invalid --color');
+		}
+
+		expect(() => parseColorSpec('ff00ff:0.9-0.1')).toThrow('min <= max');
+		expect(() => parseColorSpec('ff00ff:0-2')).toThrow('max <= 1');
+	});
+});
+
+describe('colorFraction', () => {
+	// 20x10: the left half is orange, the right half is blue
+	const split = encodePng(20, 10, x => (x < 10 ? [255, 136, 0] : [0, 136, 255]));
+	const orange = parseColorSpec('ff8800');
+
+	it('measures the share of the image with a colour', () => {
+		expect(colorFraction(split, orange)).toBeCloseTo(0.5);
+		expect(colorFraction(split, parseColorSpec('0088ff'))).toBeCloseTo(0.5);
+		expect(colorFraction(split, parseColorSpec('00ff00'))).toBe(0);
+	});
+
+	it('measures inside a region, which may stick out of the image', () => {
+		expect(colorFraction(split, parseColorSpec('ff8800@0,0,10,10'))).toBe(1);
+		expect(colorFraction(split, parseColorSpec('ff8800@10,0,10,10'))).toBe(0);
+		expect(colorFraction(split, parseColorSpec('ff8800@5,5,100,100'))).toBeCloseTo(1 / 3);
+		expect(colorFraction(split, parseColorSpec('ff8800@30,0,5,5'))).toBeUndefined();
+		expect(colorFraction(split, parseColorSpec('ff8800@0,50,5,5'))).toBeUndefined();
+	});
+
+	it('tolerates small differences per channel only', () => {
+		const near = encodePng(4, 4, () => [250, 140, 5]);
+		expect(colorFraction(near, orange)).toBe(1);
+		const far = encodePng(4, 4, () => [230, 136, 0]);
+		expect(colorFraction(far, orange)).toBe(0);
+	});
+
+	it('works for png with an alpha channel', () => {
+		const image = encodePng(4, 4, () => [255, 136, 0], {alpha: true});
+		expect(colorFraction(image, orange)).toBe(1);
+	});
+});
+
+describe('color assertions', () => {
+	const isSquare = (x, y) => x >= 5 && x < 15 && y >= 5 && y < 15;
+	let directory;
+
+	beforeEach(() => {
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-colors-'));
+		// 40x20: a 10x10 magenta square at (5, 5), the rest white
+		fs.writeFileSync(
+			path.join(directory, 'a.png'),
+			encodePng(40, 20, (x, y) => [255, isSquare(x, y) ? 0 : 255, 255]),
+		);
+	});
+
+	afterEach(() => {
+		fs.rmSync(directory, {recursive: true, force: true});
+	});
+
+	it('passes when the colour fills the region', () => {
+		expect(checkScreenshots(directory, {color: ['ff00ff@5,5,10,10:0.99']}).errors).toEqual([]);
+	});
+
+	it('passes an absence check for a colour that is not there', () => {
+		expect(checkScreenshots(directory, {color: ['00ff00:0-0.01', 'ff00ff@20,0,20,20:0-0']}).errors).toEqual([]);
+	});
+
+	it('fails with the measured share when the colour is missing from the region (control)', () => {
+		expect(checkScreenshots(directory, {color: ['ff00ff@20,0,20,20:0.9']}).errors).toEqual([
+			'a.png: 0.0% of the region 20,0 20x20 is #ff00ff, expected between 90.0% and 100.0%',
+		]);
+	});
+
+	it('fails when the colour is there although it must be absent', () => {
+		expect(checkScreenshots(directory, {color: ['ff00ff:0-0.01']}).errors).toEqual([
+			'a.png: 12.5% of the image is #ff00ff, expected between 0.0% and 1.0%',
+		]);
+	});
+
+	it('checks every selected file against every colour', () => {
+		fs.writeFileSync(path.join(directory, 'b.png'), encodePng(40, 20, () => [255, 255, 255]));
+		const {errors} = checkScreenshots(directory, {color: ['ff00ff@5,5,10,10:0.99', 'ffffff:0.5']});
+		expect(errors).toEqual(['b.png: 0.0% of the region 5,5 10x10 is #ff00ff, expected between 99.0% and 100.0%']);
+	});
+
+	it('fails for a region outside of the image', () => {
+		expect(checkScreenshots(directory, {color: ['ff00ff@100,100,5,5']}).errors).toEqual([
+			'a.png: the region 100,100 5x5 holds no pixel (--color ff00ff@100,100,5,5)',
+		]);
+	});
+
+	it('needs a png', () => {
+		fs.writeFileSync(path.join(directory, 'c.jpeg'), jpeg(10, 10));
+		expect(checkScreenshots(directory, {match: 'c*', color: ['ff00ff']}).errors).toEqual(['c.jpeg: colour checks need a png']);
+	});
+
+	it('fails on an empty selection instead of passing vacuously', () => {
+		const {errors} = checkScreenshots(directory, {match: 'x*', color: ['ff00ff']});
+		expect(errors[0]).toContain('per-file assertions were requested');
+		expect(errors[0]).toContain('color');
+	});
+
+	it('is wired to --color on the command line', () => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			expect(main(['--dir', directory, '--color', 'ff00ff@5,5,10,10:0.99', '--color', 'ffffff@20,0,20,20:0.99'])).toBe(0);
+			expect(main(['--dir', directory, '--color', 'ff00ff@20,0,20,20'])).toBe(1);
+			expect(() => main(['--dir', directory, '--color', 'purple'])).toThrow('Invalid --color');
 		} finally {
 			vi.restoreAllMocks();
 		}

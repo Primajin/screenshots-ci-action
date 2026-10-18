@@ -230,7 +230,90 @@ export function analyzePng(buffer, bandHeight = BAND_HEIGHT) {
 	return {bands, flatBands, topSignature: topHash.digest('hex')};
 }
 
+// ---- colour checks: how much of an image (or of a region of it) has a colour ----
+
+const COLOR_SPEC = /^(?<hex>[\da-f]{6})(?:@(?<x>\d+),(?<y>\d+),(?<width>\d+),(?<height>\d+))?(?::(?<min>\d+(?:\.\d+)?|\.\d+)(?:-(?<max>\d+(?:\.\d+)?|\.\d+))?)?$/iv;
+
+// "RRGGBB[@x,y,width,height][:min[-max]]": the share of the pixels (in the
+// region, in image pixels; default the whole image) that have the colour, within
+// +-8 per channel, must be between min and max (default 0.5 and 1). "ff00ff:0-0.01"
+// asserts that a colour is (nearly) absent.
+export function parseColorSpec(spec) {
+	const match = COLOR_SPEC.exec(spec);
+	if (!match) {
+		throw new Error(`Invalid --color "${spec}", expected RRGGBB[@x,y,width,height][:min[-max]]`);
+	}
+
+	const {groups} = match;
+	const min = groups.min === undefined ? 0.5 : Number(groups.min);
+	const max = groups.max === undefined ? 1 : Number(groups.max);
+	if (min > max || max > 1) {
+		throw new Error(`Invalid --color "${spec}": the fractions must satisfy 0 <= min <= max <= 1`);
+	}
+
+	return {
+		spec,
+		hex: groups.hex.toLowerCase(),
+		rgb: [0, 2, 4].map(offset => Number.parseInt(groups.hex.slice(offset, offset + 2), 16)),
+		region: groups.x === undefined
+			? undefined
+			: {
+				x: Number(groups.x), y: Number(groups.y), width: Number(groups.width), height: Number(groups.height),
+			},
+		min,
+		max,
+	};
+}
+
+// The share of the pixels of a png (inside the region) that have the colour,
+// within the tolerance per channel; undefined when the region holds no pixel.
+export function colorFraction(buffer, {rgb, region}, tolerance = FLAT_TOLERANCE) {
+	let total = 0;
+	let matching = 0;
+	decodePng(buffer, (y, row, channels) => {
+		if (region && (y < region.y || y >= region.y + region.height)) {
+			return;
+		}
+
+		const width = row.length / channels;
+		const end = region ? Math.min(width, region.x + region.width) : width;
+		for (let x = region ? region.x : 0; x < end; x++) {
+			total++;
+			const offset = x * channels;
+			if (rgb.every((value, c) => Math.abs(row[offset + c] - value) <= tolerance)) {
+				matching++;
+			}
+		}
+	});
+	return total === 0 ? undefined : matching / total;
+}
+
+function checkColors(directory, rows, options, errors) {
+	const specs = (options.color ?? []).map(spec => parseColorSpec(spec));
+	for (const row of rows) {
+		if (specs.length > 0 && row.format !== 'png') {
+			errors.push(`${row.name}: colour checks need a png`);
+			continue;
+		}
+
+		const buffer = specs.length > 0 ? fs.readFileSync(path.join(directory, row.name)) : undefined;
+		for (const spec of specs) {
+			const fraction = colorFraction(buffer, spec);
+			const where = spec.region
+				? `the region ${spec.region.x},${spec.region.y} ${spec.region.width}x${spec.region.height}`
+				: 'the image';
+			if (fraction === undefined) {
+				errors.push(`${row.name}: ${where} holds no pixel (--color ${spec.spec})`);
+			} else if (fraction < spec.min || fraction > spec.max) {
+				errors.push(`${row.name}: ${(fraction * 100).toFixed(1)}% of ${where} is #${spec.hex}, expected between ${(spec.min * 100).toFixed(1)}% and ${(spec.max * 100).toFixed(1)}%`);
+			}
+		}
+	}
+}
+
 function checkPixels(directory, rows, options, errors) {
+	checkColors(directory, rows, options, errors);
+
 	if (options.expectTotalHeight !== undefined) {
 		const total = rows.reduce((sum, row) => sum + row.height, 0);
 		if (total !== options.expectTotalHeight) {
@@ -376,6 +459,7 @@ function perFileOptionNames(options) {
 		options.maxEmptyFraction === undefined ? undefined : 'max-empty-fraction',
 		options.distinctParts ? 'distinct-parts' : undefined,
 		options.expectTotalHeight === undefined ? undefined : 'expect-total-height',
+		options.color?.length > 0 ? 'color' : undefined,
 	].filter(Boolean);
 }
 
@@ -628,6 +712,7 @@ export function main(argv = process.argv.slice(2)) {
 			'expect-total-height': {type: 'string'},
 			'max-empty-fraction': {type: 'string'},
 			'distinct-parts': {type: 'boolean', default: false},
+			color: {type: 'string', multiple: true},
 			type: {type: 'string'},
 			'no-hash': {type: 'boolean', default: false},
 			'with-hash': {type: 'boolean', default: false},
@@ -654,6 +739,7 @@ export function main(argv = process.argv.slice(2)) {
 		),
 		maxEmptyFraction: toFraction(values['max-empty-fraction']),
 		distinctParts: values['distinct-parts'],
+		color: values.color,
 		type: values.type,
 		noHash: values['no-hash'],
 		withHash: values['with-hash'],

@@ -388,3 +388,40 @@ body[data-mode='tall'] footer {
 .reveal.on .label {
   display: flex;
 }
+
+/* ---- ?mode=scheme: three 120px squares at the bottom left of the viewport.
+   Left to right, light / no reduced motion / mouse and dark / reduced motion /
+   touch change the colour: orange -> blue, green -> magenta, grey -> yellow ---- */
+#scheme-probe {
+  display: none;
+}
+
+body[data-mode='scheme'] #scheme-probe {
+  display: flex;
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 9999;
+}
+
+#scheme-probe i {
+  display: block;
+  width: 120px;
+  height: 120px;
+}
+
+#scheme-color { background: #ff8800; }
+#scheme-motion { background: #00cc00; }
+#scheme-touch { background: #888888; }
+
+@media (prefers-color-scheme: dark) {
+  #scheme-color { background: #0088ff; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #scheme-motion { background: #ff00ff; }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #scheme-touch { background: #ffee00; }
+}
