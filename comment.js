@@ -19,6 +19,8 @@
 // renders its captures as one group titled with the section name, between
 // hidden markers; the headline and the footer are shared by all sections.
 
+import {repeatNote} from './page-problems.js';
+
 const PART = /^(?<before>.*)-part(?<part>\d+)(?<after>(?:-[^.]*)?\.[\dA-Za-z]+)$/v;
 const EXTENSION = /\.[\dA-Za-z]+$/v;
 // The suffix the action appends: 7 character commit sha or a Date.now() fallback
@@ -401,8 +403,49 @@ function renderFooter(footer) {
 	return parts.length > 0 ? `<sub>${parts.join(' · ')}</sub>\n` : '';
 }
 
-// Failures that the group headings do not show
-function renderWarnings(captures, lost, groupBy) {
+// The problems the page reported while it was captured, as list items: at most
+// MAX_PROBLEM_LINES of at most MAX_PROBLEM_LENGTH characters of text, then how many more
+const MAX_PROBLEM_LINES = 10;
+const MAX_PROBLEM_LENGTH = 300;
+
+// A line break in the text would end the quoted line of the warning
+const oneLine = text => text.replaceAll(/\s+/gv, ' ').trim();
+
+// At most `max` characters, cut at a whole character (not inside a surrogate pair) with an
+// ellipsis as the last one
+function cutText(text, max) {
+	const characters = [...text];
+	return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : text;
+}
+
+// Text as an inline code span: GitHub neither links, mentions nor cross-references
+// inside code, and a backtick in the text cannot end it, because the span is
+// fenced by more backticks than the longest run in the text
+function inlineCode(text) {
+	const longest = Math.max(0, ...(text.match(/`+/gv) ?? []).map(run => run.length));
+	const fence = '`'.repeat(longest + 1);
+	return `${fence} ${text} ${fence}`;
+}
+
+function renderProblems(problems) {
+	if (!problems || problems.length === 0) {
+		return [];
+	}
+
+	// The text comes from the page that is captured, so it is shown as code, verbatim;
+	// the label is ours
+	const shown = problems.slice(0, MAX_PROBLEM_LINES).map(({label, text, count}) =>
+		`- ${escapeHtml(label)}: ${inlineCode(cutText(oneLine(text), MAX_PROBLEM_LENGTH))}${repeatNote(count)}`);
+	const more = problems.length - shown.length;
+	return [
+		`The page reported ${problems.length} problem${problems.length === 1 ? '' : 's'} while it was captured:`,
+		...shown,
+		...more > 0 ? [`- …and ${more} more`] : [],
+	];
+}
+
+// Failures that the group headings do not show, and the problems of the page
+function renderWarnings(captures, lost, groupBy, problems) {
 	const lines = [
 		...groupBy === 'capture'
 			? []
@@ -410,6 +453,7 @@ function renderWarnings(captures, lost, groupBy) {
 				.filter(capture => capture.missing.length > 0)
 				.map(capture => `${escapeHtml(capture.label)}: ${failureText(capture.missing)}`),
 		...lost.map(label => `${escapeHtml(label)}: failed to upload`),
+		...renderProblems(problems),
 	];
 	return lines.length > 0
 		? `> [!WARNING]\n${lines.map(line => `> ${line}`).join('\n')}\n\n`
@@ -433,7 +477,7 @@ function renderSectionContent(captures, lost, settings) {
 		settings.omitted > 0
 			? `…and ${settings.omitted} more image${settings.omitted === 1 ? '' : 's'} not shown, see the release assets.\n\n`
 			: '',
-		renderWarnings(captures, lost, captures.length === 1 ? 'capture' : 'all'),
+		renderWarnings(captures, lost, captures.length === 1 ? 'capture' : 'all', settings.problems),
 	].join('');
 }
 
@@ -485,7 +529,7 @@ function frameSection(content, settings) {
  Render the PR comment.
  @param {{fileName: string, name: string, url: string, bytes: number, width?: number, height?: number}[]} uploaded The uploaded images (fileName is the local file name).
  @param {string[]} allFiles Every local file name, so failed parts are known.
- @param {object} [options] layout, open, groupBy, imageWidth, imageHeight, headline, tag, footer ({sha, runUrl} or null), omitted (a count shown as "...and N more"), section ({name, slug}: render only this call's section into previousBody, the body of the earlier comment of the tag) and previousBody.
+ @param {object} [options] layout, open, groupBy, imageWidth, imageHeight, headline, tag, footer ({sha, runUrl} or null), omitted (a count shown as "...and N more"), problems ([{label, text, count}] the page reported, shown as a warning), section ({name, slug}: render only this call's section into previousBody, the body of the earlier comment of the tag) and previousBody.
  @returns {string} The markdown, starting with the hidden marker line; empty when nothing was uploaded.
  */
 function renderComment(uploaded, allFiles, options = {}) {
@@ -510,7 +554,7 @@ function renderComment(uploaded, allFiles, options = {}) {
 		settings.omitted > 0
 			? `…and ${settings.omitted} more image${settings.omitted === 1 ? '' : 's'} not shown, see the release assets.\n\n`
 			: '',
-		renderWarnings(captures, lost, settings.groupBy),
+		renderWarnings(captures, lost, settings.groupBy, settings.problems),
 		renderFooter(settings.footer),
 	].join('');
 }
@@ -604,11 +648,15 @@ export {
 	DEFAULT_OPTIONS,
 	GITHUB_MAX_IMAGE_HEIGHT,
 	MAX_COMMENT_LENGTH,
+	MAX_PROBLEM_LENGTH,
+	MAX_PROBLEM_LINES,
 	buildCommentBody,
 	captureLabel,
 	commentMarker,
+	cutText,
 	displaySize,
 	formatBytes,
+	inlineCode,
 	mergeSection,
 	parseFileName,
 	renderComment,

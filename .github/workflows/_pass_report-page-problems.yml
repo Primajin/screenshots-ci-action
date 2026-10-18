@@ -1,0 +1,100 @@
+name: "Positive Test - report page problems"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # The CI pre-release, see _pass_release-pr-comment.yml and README.ci.md
+  CI_RELEASE_ID: '415059795'
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - the errors of the page and a selector never reached are in the comment, and the run does not fail"
+    # The comments of this scenario are edited in place, so runs for one PR queue up
+    concurrency:
+      group: report-page-problems-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      # ?mode=problems logs a console error and throws a page error while it loads,
+      # and #never-appears is not on the page
+      - name: Capture a page with problems and report them
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=problems
+          no-desktop: true
+          sizes: 1280x720
+          devices: iPhone 13
+          wait-for-selector: '#never-appears'
+          wait-for-selector-timeout: 1000
+          report-page-problems: true
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: problems-on
+          comment-headline: Page problems
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the screenshots were taken anyway
+        run: node .github/scripts/assert-screenshots.mjs --title "page problems" --archive-to artifacts/problems --expect-count 2 --expect 'iPhone_13-*=1170x1992' --expect 'size1280x720-*=1280x720'
+      - name: Assert the comment has the warning with the problems of both captures
+        run: |
+          set -euo pipefail
+          # The text of the page is a code span, so it is fenced by backticks
+          bt=$(printf '\140')
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (problems reported)" --tag problems-on --expect-comments 1 --images 2 \
+            --contains='> [!WARNING]' --contains='The page reported 6 problems while it was captured:' \
+            --contains="> - Size 1,280 × 720: $bt pageerror: demo page error: cart is undefined $bt" \
+            --contains="> - Size 1,280 × 720: $bt console: demo console error: the cart could not be loaded, see [the log](https://example.com/log) @octocat #1 $bt" \
+            --contains="> - Size 1,280 × 720: $bt never reached #never-appears $bt" \
+            --contains="> - iPhone 13: $bt pageerror: demo page error: cart is undefined $bt" \
+            --contains="> - iPhone 13: $bt console: demo console error: the cart could not be loaded, see [the log](https://example.com/log) @octocat #1 $bt" \
+            --contains="> - iPhone 13: $bt never reached #never-appears $bt" \
+            --not-contains='demo console log' \
+            --write-body "$RUNNER_TEMP/comment-on.md"
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/comment-on.md"
+
+      # The control: without the input nothing is reported, for the same page
+      - name: Capture the same page without report-page-problems
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=problems
+          no-desktop: true
+          sizes: 1280x720
+          devices: iPhone 13
+          wait-for-selector: '#never-appears'
+          wait-for-selector-timeout: 1000
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: problems-off
+          comment-headline: No problems reported
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the comment has no warning (control)
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (problems not reported)" --tag problems-off --expect-comments 1 --images 2 \
+            --not-contains='[!WARNING]' --not-contains='demo page error' --not-contains='never reached'
+          echo "- With report-page-problems the comment listed 6 problems of 2 captures; without it none, and neither run failed" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-report-page-problems
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

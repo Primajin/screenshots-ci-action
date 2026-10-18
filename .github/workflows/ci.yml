@@ -147,6 +147,13 @@ jobs:
       pull-requests: write
     uses: ./.github/workflows/_pass_release-pr-comment.yml
 
+  pass-report-page-problems:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/_pass_report-page-problems.yml
+
   pass-sizes:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -202,6 +209,7 @@ jobs:
       - pass-per-run-files
       - pass-pre-script-login
       - pass-release-pr-comment
+      - pass-report-page-problems
       - pass-sizes
       - pass-type
       - pass-uses-external-url

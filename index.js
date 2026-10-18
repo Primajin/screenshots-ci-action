@@ -13,9 +13,10 @@ import {
 	resolveMaxImageHeight,
 	takeScreenshot,
 } from './capture.js';
-import {buildCommentBody, commentMarker} from './comment.js';
+import {buildCommentBody, captureLabel, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
+import {annotateProblems, createProblemCollector} from './page-problems.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
 import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
 import {
@@ -61,17 +62,36 @@ let browser;
 // a job, so uploading, commenting and Telegram only look at these.
 const runFiles = createRunFiles(PATH);
 
+// The problems the pages reported (only collected with report-page-problems)
+const pageProblems = createProblemCollector();
+let areProblemsReported = false;
+
+// The problems so far, as annotations of the run (once, also when a capture failed:
+// then the problems are what explains it)
+function reportPageProblems() {
+	const problems = pageProblems.list();
+	if (!areProblemsReported) {
+		areProblemsReported = true;
+		annotateProblems(problems, core.warning, console.warn);
+	}
+
+	return problems;
+}
+
 // Wait for the configured selector. A timeout must not break the flow, so the
 // error is logged and the screenshot is taken anyway (unchanged behaviour).
+// Resolves to true when the wait timed out.
 async function waitForConfiguredSelector(page, selector, options) {
 	if (!selector) {
-		return;
+		return false;
 	}
 
 	try {
 		await page.waitForSelector(selector, options);
+		return false;
 	} catch (error) {
 		console.error(error);
+		return true;
 	}
 }
 
@@ -117,6 +137,8 @@ function readConfig() {
 		isFullPage: core.getInput('full-page') === 'true',
 		// How a full page capture brings the page on screen; an unknown value fails the run here
 		fullPageStrategy: resolveFullPageStrategy(core.getInput('full-page-strategy')),
+		// Collect what the pages report (errors, a selector never reached) and show it as warnings
+		isReportingPageProblems: core.getInput('report-page-problems').toLowerCase() === 'true',
 		// Only matters for full page captures; on unless explicitly switched off.
 		isScrollBeforeCapture: isScrollEnabled(core.getInput('scroll-before-capture')),
 		maxImageHeight: maxImage.value,
@@ -149,6 +171,7 @@ function logConfig(config) {
 		sizes: config.customSizes,
 		fullPage: config.isFullPage,
 		fullPageStrategy: config.fullPageStrategy,
+		reportPageProblems: config.isReportingPageProblems,
 		scrollBeforeCapture: config.isScrollBeforeCapture,
 		maxImageHeight: config.maxImageHeight,
 		type: config.screenshotType,
@@ -213,15 +236,26 @@ const pathForBase = (config, base) => part =>
 		? `${PATH}${base}${part}.${config.screenshotType}`
 		: `${PATH}${base}${part}-${POST_FIX}.${config.screenshotType}`;
 
+// Right after a page is created, before it navigates, so the errors of loading
+// are not missed
+function watchPage(page, config, label) {
+	if (config.isReportingPageProblems) {
+		pageProblems.attach(page, label);
+	}
+}
+
 // Open the page and wait for the configured selector, if any
-async function openPage(page, config) {
+async function openPage(page, config, label) {
 	await page.goto(config.url, {waitUntil: config.waitUntil});
 	// Wait for page element when config has element selector
-	await waitForConfiguredSelector(
+	const isTimedOut = await waitForConfiguredSelector(
 		page,
 		config.waitForSelector,
 		config.waitForSelectorOptions,
 	);
+	if (isTimedOut && config.isReportingPageProblems) {
+		pageProblems.add(label, `never reached ${config.waitForSelector}`);
+	}
 }
 
 // 4. Take desktop screenshots: one context, the page is resized for every size
@@ -244,7 +278,8 @@ async function captureDesktop(config, storageState) {
 		),
 	);
 	const desktopPage = await desktopContext.newPage();
-	await openPage(desktopPage, config);
+	watchPage(desktopPage, config, 'Desktop');
+	await openPage(desktopPage, config, 'Desktop');
 
 	for (const {width, height} of desktopSizes) {
 		await desktopPage.setViewportSize({width, height});
@@ -262,7 +297,10 @@ async function captureDesktop(config, storageState) {
 async function captureInNewContext(config, contextOptions, base) {
 	const context = await browser.newContext(contextOptions);
 	const page = await context.newPage();
-	await openPage(page, config);
+	// The label the capture has in the comment
+	const label = captureLabel(base);
+	watchPage(page, config, label);
+	await openPage(page, config, label);
 	const options = screenshotOptions(config, pathForBase(config, base));
 	runFiles.add(await takeScreenshot(page, options));
 	await context.close();
@@ -385,11 +423,14 @@ async function run() {
 
 		await browser.close();
 
-		// 7. Run screenshot post task
-		await postProcesses(config.commentOptions, runFiles.names());
+		// 7. Report what the pages said, then run the screenshot post task. Problems
+		// never fail the run.
+		await postProcesses(config.commentOptions, runFiles.names(), reportPageProblems());
 	} catch (error) {
 		console.error(error);
 		core.setFailed(error.message);
+		// What the pages reported before the capture failed
+		reportPageProblems();
 
 		if (browser && browser.close) {
 			// Cleanup must never mask the original error or skip the exit code.
@@ -447,7 +488,7 @@ async function uploadImages(octokit, {owner, repo, releaseId}, files) {
 }
 
 // Upload the images to the release and, unless switched off, post them to the PR
-async function uploadAndCommentImages(files, commentOptions) {
+async function uploadAndCommentImages(files, commentOptions, problems) {
 	try {
 		const {
 			repo: {owner, repo},
@@ -471,6 +512,7 @@ async function uploadAndCommentImages(files, commentOptions) {
 			const renderOptions = {
 				...commentOptions,
 				footer: commentOptions.footer ? buildFooter(pull_request) : null,
+				problems,
 			};
 			// Rendered when the earlier comment is known: a section is merged into
 			// its body, everything else is rendered as a whole. It runs again when the
@@ -510,7 +552,7 @@ async function uploadAndCommentImages(files, commentOptions) {
 }
 
 // `files` are the names this call wrote, not everything in the directory
-async function postProcesses(commentOptions, files) {
+async function postProcesses(commentOptions, files, problems) {
 	if (files.length === 0) {
 		console.warn(`No screenshots were written to ${PATH}; nothing to send or post.`);
 		return;
@@ -546,7 +588,7 @@ async function postProcesses(commentOptions, files) {
 	}
 
 	if (decision.upload) {
-		await uploadAndCommentImages(files, commentOptions);
+		await uploadAndCommentImages(files, commentOptions, problems);
 	}
 }
 

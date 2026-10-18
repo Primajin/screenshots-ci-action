@@ -44,6 +44,7 @@ Telegram chat.
 - [Permissions, tokens and runners](#permissions-tokens-and-runners)
 - [Tall pages](#tall-pages) (`full-page`, `full-page-strategy`, `max-image-height`, `scroll-before-capture`)
 - [Custom sizes](#custom-sizes) (`sizes`: your own width, height and scale)
+- [Page problems](#page-problems) (`report-page-problems`: errors of the page as a warning)
 - [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
 - [Examples](#examples)
@@ -118,7 +119,7 @@ by running both. Changes that can break an existing workflow are listed in
 | `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
 | Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
 | Running on your machine | The `screenshots/` directory was only created when `GITHUB_WORKSPACE` was set (otherwise `ENOENT`), and without `GITHUB_REPOSITORY` the run failed after the capture. | Creates the directory and skips the GitHub steps. | [README.ci.md](README.ci.md#run-the-action-on-your-machine) |
-| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 24 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
+| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 25 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
 
 ## Inputs
 
@@ -160,6 +161,7 @@ All inputs are optional except `url`. How switches are read differs a little:
 
 | Input | Default | Description |
 | --- | --- | --- |
+| `report-page-problems` | `false` | Set `true` to report what the page does wrong while it is captured: uncaught exceptions and console errors (listened to from before the navigation) and a `wait-for-selector` that timed out. They show up as a warning block in the PR comment and as warning annotations of the run. It never fails the run. See [Page problems](#page-problems). |
 | `release-id` | `''` | Id of an existing, published GitHub release that the screenshots are uploaded to as assets; the PR comment shows these files. A long-lived pre-release shared by all pull requests works well. Needs the `GITHUB_TOKEN` env. See [README.PR.md](README.PR.md) and [PR comments](#pr-comments). |
 | `comment` | `true` | Post the uploaded screenshots to the pull request. `false`, `0`, `no` and `off` (any case) switch it off: the screenshots are still uploaded to the release (needs `release-id`), nothing is posted. |
 | `comment-layout` | `details` | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
@@ -399,6 +401,53 @@ separated list; every entry looks like `WIDTHxHEIGHT[@SCALE][:mobile]`:
   (`full-page`, `max-image-height`, `-partN`). In the PR comment a capture is
   named `Size 1,440 × 900 @2x` (`Size 390 × 844 @3x, mobile`); custom sizes are
   listed after the desktop sizes and before the devices.
+
+## Page problems
+
+A screenshot of a page that broke is exactly the one you want to look at, but a
+page can look fine and still have thrown errors. With `report-page-problems:
+true` the action reports what went wrong while it captured:
+
+- an **uncaught exception** of the page (`pageerror`),
+- an **error in the console** (`console.error`, including the "Failed to load
+  resource" errors of the browser for a 404),
+- a `wait-for-selector` that **timed out** ("never reached `<selector>`").
+
+The listeners are attached to every page right after it is created and before it
+navigates, so the errors of the load itself are caught (desktop sizes share one
+page, so they are reported once as `Desktop`; every device and custom size has
+its own page and is named like in the comment). Problems are reported in two
+places:
+
+- in the **PR comment**, as a `> [!WARNING]` block with one line per problem and
+  the capture it belongs to: at most 10 lines, each with at most 300 characters
+  of text, then `…and N more`; a problem that repeated is shown once with
+  `(3 times)`. The text of the page is shown as an **inline code span**,
+  verbatim, so a `[link](https://…)`, an image, an `@mention` or an `#issue`
+  reference in it stays plain text. With `comment-section` the block is part of
+  the section of that call;
+- as **annotations** of the workflow run (`::warning`), titled
+  `Page problem (<capture>)`, the first 10; the rest is in the log. They are also
+  shown when a capture failed, because then they are the best clue to why.
+
+```yaml
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    devices: iPhone 13
+    wait-for-selector: '#app[data-ready]'
+    report-page-problems: true
+```
+
+It **never fails the run**, and it does not change a single pixel of the
+screenshots. Only errors are reported, not `console.log` or `console.warn`; what
+the page does after the capture is not seen.
+
+**The text of the page is posted as it is.** What the page prints to its console
+or throws goes into the PR comment verbatim: it is not masked like a secret in the
+run logs, and everybody who can see the pull request sees it. Do not enable
+`report-page-problems` for a page that prints secrets, tokens or personal data to
+its console.
 
 ## Context options
 

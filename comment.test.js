@@ -2,11 +2,15 @@ import {describe, expect, it} from 'vitest';
 import {
 	GITHUB_MAX_IMAGE_HEIGHT,
 	MAX_COMMENT_LENGTH,
+	MAX_PROBLEM_LENGTH,
+	MAX_PROBLEM_LINES,
 	buildCommentBody,
 	captureLabel,
 	commentMarker,
+	cutText,
 	displaySize,
 	formatBytes,
+	inlineCode,
 	mergeSection,
 	parseFileName,
 	renderComment,
@@ -882,5 +886,157 @@ describe('buildCommentBody with a section', () => {
 		expect(body).toContain('…40 images not listed, see the release assets.');
 		expect(body).toContain('<!-- /screenshots-ci-action:screenshots:section:mine -->');
 		expect(body).toContain('https://x/other-image');
+	});
+});
+
+describe('inlineCode', () => {
+	it('is a code span with a space on each side', () => {
+		expect(inlineCode('pageerror: x is not defined')).toBe('` pageerror: x is not defined `');
+	});
+
+	it('fences text that has backticks with more backticks than its longest run', () => {
+		expect(inlineCode('a `b` c')).toBe('`` a `b` c ``');
+		expect(inlineCode('```js\ncode```')).toBe('```` ```js\ncode``` ````');
+		expect(inlineCode('x ``` y `` z')).toBe('```` x ``` y `` z ````');
+		expect(inlineCode('`')).toBe('`` ` ``');
+	});
+
+	it('keeps the text that starts or ends with a backtick from merging with the fence', () => {
+		expect(inlineCode('`start')).toBe('`` `start ``');
+		expect(inlineCode('end`')).toBe('`` end` ``');
+	});
+});
+
+describe('cutText', () => {
+	it('keeps text up to the maximum and cuts longer text with an ellipsis', () => {
+		expect(cutText('abc', 3)).toBe('abc');
+		expect(cutText('abcd', 3)).toBe('ab…');
+		expect(cutText('x'.repeat(500), 300)).toHaveLength(300);
+	});
+
+	it('cuts between characters, never inside a surrogate pair', () => {
+		const text = '😀'.repeat(400);
+		const cut = cutText(text, 300);
+		expect([...cut]).toHaveLength(300);
+		expect(cut.endsWith('…')).toBe(true);
+		// No lone surrogate: every code unit pair is whole
+		expect(cut.isWellFormed()).toBe(true);
+		expect(cutText(`${'a'.repeat(298)}😀😀`, 300).isWellFormed()).toBe(true);
+	});
+});
+
+describe('page problems in the comment', () => {
+	const problem = (label, text, times = 1) => ({label, text, count: times});
+	const one = ['desktopPage1440x900-abc1234.jpeg'];
+	const oneUpload = [entry(one[0], 'https://x/d', 1024, {width: 1440, height: 900})];
+
+	it('shows no warning without problems', () => {
+		expect(renderComment(oneUpload, one, {problems: []})).not.toContain('[!WARNING]');
+		expect(renderComment(oneUpload, one)).not.toContain('[!WARNING]');
+	});
+
+	it('shows a warning block with one line per problem and the capture it belongs to, the text as code', () => {
+		const problems = [problem('Desktop', 'pageerror: x is not defined'), problem('iPhone 13', 'console: Failed to load resource')];
+		const body = renderComment(oneUpload, one, {problems});
+		expect(body).toContain([
+			'> [!WARNING]',
+			'> The page reported 2 problems while it was captured:',
+			'> - Desktop: ` pageerror: x is not defined `',
+			'> - iPhone 13: ` console: Failed to load resource `',
+			'',
+			'',
+		].join('\n'));
+	});
+
+	it('says problem for one problem and shows how often a repeated one happened', () => {
+		const body = renderComment(oneUpload, one, {problems: [problem('Desktop', 'console: 404', 3)]});
+		expect(body).toContain('> The page reported 1 problem while it was captured:\n> - Desktop: ` console: 404 ` (3 times)\n');
+	});
+
+	it('shows at most ten lines and how many more there are', () => {
+		const problems = Array.from({length: 13}, (_, index) => problem('Desktop', `problem ${index + 1}`));
+		const body = renderComment(oneUpload, one, {problems});
+		expect(MAX_PROBLEM_LINES).toBe(10);
+		expect(body).toContain('> The page reported 13 problems');
+		expect(count(body, '> - Desktop: ` problem ')).toBe(10);
+		expect(body).toContain('> - Desktop: ` problem 10 `\n> - …and 3 more\n');
+		expect(body).not.toContain('problem 11');
+	});
+
+	it('cuts a long text to 300 characters', () => {
+		const body = renderComment(oneUpload, one, {problems: [problem('Desktop', 'x'.repeat(1000))]});
+		const line = body.split('\n').find(item => item.startsWith('> - Desktop: '));
+		expect(MAX_PROBLEM_LENGTH).toBe(300);
+		expect(line).toBe(`> - Desktop: \` ${'x'.repeat(299)}… \``);
+	});
+
+	it('does not cut an emoji in two', () => {
+		const body = renderComment(oneUpload, one, {problems: [problem('Desktop', '😀'.repeat(400))]});
+		expect(body.isWellFormed()).toBe(true);
+	});
+
+	it('escapes html in the label, but shows the text of the page as code, verbatim', () => {
+		const body = renderComment(oneUpload, one, {problems: [problem('<b>Desktop</b>', 'pageerror: <script>alert("x")</script> & more')]});
+		expect(body).toContain('> - &lt;b&gt;Desktop&lt;/b&gt;: ` pageerror: <script>alert("x")</script> & more `');
+	});
+
+	it('cannot be used to link, embed, mention or cross-reference from the page: all of it is inside code spans', () => {
+		const texts = [
+			'console: [click here](https://evil.example/login)',
+			'console: ![x](https://evil.example/p.png)',
+			'console: ping @octocat and @some-org/some-team',
+			'console: see #1 and owner/repo#2 and GH-3',
+			'console: https://evil.example/bare-link',
+		];
+		const body = renderComment(oneUpload, one, {problems: texts.map(text => problem('Desktop', text))});
+		for (const text of texts) {
+			expect(body, text).toContain(`> - Desktop: \` ${text} \`\n`);
+		}
+
+		// Outside of the code spans there is nothing of the page's text
+		const outside = body.split('\n').filter(line => line.startsWith('> - Desktop:')).map(line => line.replaceAll(/`[^`]*`/gv, ''));
+		for (const line of outside) {
+			expect(line).toBe('> - Desktop: ');
+		}
+	});
+
+	it('keeps backticks of the page from ending the code span or opening a block', () => {
+		const texts = ['console: ```js\nalert(1)', 'console: a `b` c', 'console: ``` ``` ```', 'console: `'];
+		const body = renderComment(oneUpload, one, {problems: texts.map(text => problem('Desktop', text))});
+		const lines = body.split('\n');
+		// Every text stays on its own line (a newline in it is one space), fenced by a longer run
+		const rendered = lines.filter(line => line.startsWith('> - Desktop:'));
+		expect(rendered).toHaveLength(4);
+		expect(rendered[0]).toBe('> - Desktop: ```` console: ```js alert(1) ````');
+		expect(rendered[1]).toBe('> - Desktop: `` console: a `b` c ``');
+		expect(rendered[2]).toBe('> - Desktop: ```` console: ``` ``` ``` ````');
+		expect(rendered[3]).toBe('> - Desktop: `` console: ` ``');
+	});
+
+	it('shares the warning block with failed uploads', () => {
+		const body = renderComment(uploaded, files, {groupBy: 'all', problems: [problem('Desktop', 'pageerror: x')]});
+		expect(count(body, '> [!WARNING]')).toBe(1);
+		expect(body.indexOf('part 2 failed to upload')).toBeLessThan(body.indexOf('The page reported 1 problem'));
+	});
+
+	it('is shown in the links layout as well', () => {
+		const body = renderComment(oneUpload, one, {layout: 'links', problems: [problem('Desktop', 'pageerror: x')]});
+		expect(body).toContain('> - Desktop: ` pageerror: x `');
+		expect(body).not.toContain('<img');
+	});
+
+	it('is part of the section of the call, before its end marker', () => {
+		const body = renderComment(oneUpload, one, {section: {name: 'Dark', slug: 'dark'}, problems: [problem('Desktop', 'pageerror: x')]});
+		expect(body.indexOf('> - Desktop: ` pageerror: x `')).toBeLessThan(body.indexOf('<!-- /screenshots-ci-action:screenshots:section:dark -->'));
+		expect(body.indexOf('> - Desktop: ` pageerror: x `')).toBeGreaterThan(body.indexOf('<!-- screenshots-ci-action:screenshots:section:dark -->'));
+	});
+
+	it('stays when the comment is degraded to links', () => {
+		const many = Array.from({length: 40}, (_, index) => `iPhone_${index}-abc1234.jpeg`);
+		const uploads = many.map(name => entry(name, `https://x/${name}`, 1024, {width: 300, height: 600}));
+		const full = renderComment(uploads, many, {problems: [problem('Desktop', 'pageerror: x')]});
+		const {body} = buildCommentBody(uploads, many, {problems: [problem('Desktop', 'pageerror: x')]}, full.length - 100);
+		expect(body).not.toContain('<img');
+		expect(body).toContain('> - Desktop: ` pageerror: x `');
 	});
 });
