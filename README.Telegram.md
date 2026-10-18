@@ -3,8 +3,8 @@
 [Back to the README](README.md)
 
 When the environment variables `TELE_CHAT_ID` and `TELE_BOT_TOKEN` are both set
-on the action step, every file in the `screenshots/` directory is sent to that
-Telegram chat after the capture. Nothing else is needed: no `release-id`, no
+on the action step, the screenshots **that this call of the action took** are
+sent to that Telegram chat after the capture. Nothing else is needed: no `release-id`, no
 `GITHUB_TOKEN`. It can be combined with the [PR comment](README.PR.md) and with
 `actions/upload-artifact`.
 
@@ -80,7 +80,7 @@ The action calls the [Telegram Bot API](https://core.telegram.org/bots/api)
 directly with the `fetch` of Node 24 (`sendPhoto` and `sendMediaGroup`, a
 multipart upload). There is no Telegram library and no extra dependency.
 
-| Files in `screenshots/` | What is sent |
+| Screenshots of the call | What is sent |
 | --- | --- |
 | 1 | a single photo (`sendPhoto`) |
 | 2 to 10 | one album (`sendMediaGroup`) |
@@ -96,9 +96,11 @@ multipart upload). There is no Telegram library and no extra dependency.
   them as photos. Telegram recompresses photos, so the images in the chat look
   a little softer than the files in the artifact. They are not sent as
   documents.
-- Every file of the `screenshots/` directory is sent, including files that an
-  earlier step wrote there. A tall page that was captured in parts
-  (`-part1`, `-part2`, ...) is sent part by part.
+- Only the files this call of the action wrote are sent, in the order they were
+  captured (the desktop sizes, then the devices). A file
+  that another step, or an earlier call of the action, put into `screenshots/` is
+  **not** sent. A tall page that was captured in parts (`-part1`, `-part2`, ...)
+  is sent part by part.
 - A failure (wrong token, unknown chat, the bot is not allowed to post, a
   rejected photo) is **logged and does not fail the action**. The error message
   never contains the bot token.

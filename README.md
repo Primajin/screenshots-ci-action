@@ -43,6 +43,7 @@ Telegram chat.
 - [Output files](#output-files)
 - [Permissions, tokens and runners](#permissions-tokens-and-runners)
 - [Tall pages](#tall-pages) (`full-page`, `max-image-height`, `scroll-before-capture`)
+- [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
 - [Examples](#examples)
 - [Devices and desktop sizes](#desktop-sizes)
@@ -116,7 +117,7 @@ by running both. Changes that can break an existing workflow are listed in
 | `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
 | Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
 | Running on your machine | The `screenshots/` directory was only created when `GITHUB_WORKSPACE` was set (otherwise `ENOENT`), and without `GITHUB_REPOSITORY` the run failed after the capture. | Creates the directory and skips the GitHub steps. | [README.ci.md](README.ci.md#run-the-action-on-your-machine) |
-| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 17 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
+| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 20 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
 
 ## Inputs
 
@@ -136,6 +137,7 @@ All inputs are optional except `url`. How switches are read differs a little:
 | `full-page` | `false` | Set `true` to capture the whole scrollable page instead of the viewport. See [Tall pages](#tall-pages). |
 | `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
 | `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
+| `context-options` | `''` | A JSON object with Playwright browser context options that are applied to **every** capture, desktop and devices: `colorScheme`, `reducedMotion`, `forcedColors`, `deviceScaleFactor`, `isMobile`, `hasTouch`, `viewport`, `locale`, `timezoneId`, `userAgent`. Invalid JSON, an unknown key or a wrong type fails the run. A `viewport` replaces the 7 fixed desktop sizes with that one. See [Context options](#context-options). |
 | `type` | `jpeg` | The file type, `jpeg` or `png`. |
 | `no-commit-hash-file-name` | `false` | Set `true` to leave the commit hash out of the file names. See [Output files](#output-files). |
 
@@ -198,8 +200,15 @@ Screenshots are written to `screenshots/` in the workspace
 is the merge commit of the pull request, not the head commit), or a millisecond
 timestamp when there is no `GITHUB_SHA`. `no-commit-hash-file-name: true`
 leaves it out. A second call of the action in the same job adds to the same
-directory, so remove the files in between if you upload them separately (see
-[Example 3](#example-3-two-urls-in-one-job)).
+directory, which is never emptied, so remove the files in between if you upload
+the directory with `actions/upload-artifact` separately (see
+[Example 3](#example-3-two-urls-in-one-job)). The release upload, the PR comment
+and Telegram are not affected: **each call publishes only the files it wrote
+itself**, so a second call does not upload or post the images of the first one
+again. The same goes for files that another step drops into `screenshots/`: they
+stay in the directory (and in an artifact of the whole directory) but are **not**
+uploaded, posted or sent. The release upload and the Telegram photos are in the
+order the call captured them (the desktop sizes, then the devices), not the order of the directory listing.
 
 There are three ways to get the screenshots out:
 
@@ -295,6 +304,54 @@ What this means:
 break workflows, see [Migrating from v3](#migrating-from-v3). Lower
 `max-image-height` for more, smaller parts; there is no way to get one image
 above `16000` pixels.
+
+## Context options
+
+`context-options` sets [Playwright browser context options](https://playwright.dev/docs/api/class-browser#browser-new-context)
+for **every** capture of the call, the desktop sizes and the devices. It is a
+JSON object; only these keys are accepted:
+
+| Key | Value |
+| --- | --- |
+| `colorScheme` | `light`, `dark` or `no-preference`: what `prefers-color-scheme` reports |
+| `reducedMotion` | `reduce` or `no-preference`: what `prefers-reduced-motion` reports |
+| `forcedColors` | `active` or `none` |
+| `deviceScaleFactor` | a number above 0 and at most 5: `2` makes the images twice as wide and high |
+| `isMobile`, `hasTouch` | `true` or `false` |
+| `viewport` | `{"width": 1440, "height": 900}`, both whole numbers from 1 to 10000 |
+| `locale` | a language tag such as `de-DE` |
+| `timezoneId` | an IANA time zone such as `Europe/Berlin` (a UTC offset is not accepted) |
+| `userAgent` | a non-empty string |
+
+```yaml
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    no-desktop: true
+    devices: iPhone 13
+    context-options: '{"colorScheme": "dark", "reducedMotion": "reduce"}'
+```
+
+- **Invalid input fails the run** before a browser is started, with a message
+  that names the problem: invalid JSON, a value that is not an object, an
+  unknown key (the message lists the allowed ones), a value of the wrong type or
+  out of range, a `locale` that is not a language tag and a `timezoneId` that is
+  not a known time zone (both are checked against the same data the browser has,
+  so they cannot fail later).
+  Anything else Playwright accepts (`storageState`, `proxy`, headers,
+  permissions, ...) is deliberately not offered, so the input cannot change what
+  the action itself relies on.
+- **Order.** The options are merged over a device's own values (`iPhone 13`
+  brings its viewport, scale factor, user agent, `isMobile` and `hasTouch`), so
+  they win; the session of a [pre-script](README.pre-script.md) is added last and
+  is never overridden. The context the pre-script itself runs in is left as it is.
+- **`viewport` and the desktop sizes.** Without a `viewport` the action captures
+  the [7 fixed desktop sizes](#desktop-sizes). With one, the desktop capture
+  uses **only that viewport** and writes one file, `desktopPage<width>x<height>-<sha>.<type>`
+  (use `no-desktop: true` to skip the desktop capture altogether). On a device the
+  `viewport` replaces the device's own viewport; the file keeps the device's name.
+- **Several looks of one page.** Call the action once per look (one call per
+  `context-options`); every call writes its own files.
 
 ## PR comments
 

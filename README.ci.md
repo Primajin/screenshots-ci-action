@@ -19,12 +19,15 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-no-desktop` | only the device file exists and it is viewport sized, not full page |
 | `pass-full-page` | `full-page: true` is taller than the viewport, `false` is exactly the viewport |
 | `pass-full-page-tall` | the 20276px `?mode=tall` page (full-page) is captured in consecutive parts (3 for an iPad Pro 11 by default, 16 for an iPhone 13 with `max-image-height: 4000`, 13 with `5000`; `99999` is clamped and logged): at most the maximum per part, parts add up to the page, no blank 250px bands, distinct parts, and the 4000px and 5000px captures consist of identical pixel rows (no gap or overlap at a seam). A control with `scroll-before-capture: false` must fail the blank band check, which tests the input parsing end to end |
+| `pass-context-options` | `context-options` end to end, proven by the colours of the `?mode=scheme` page: dark, reduced motion and a scale factor of 2 on a desktop context and on a device (a `viewport` leaves one desktop file of 1600x1200 instead of seven), the unchanged light and mouse colours without the input (control), a 390x844 mobile context with touch, and the session of a pre-script kept next to the options |
+| `pass-per-run-files` | two sequential calls in one job on the PR (comment tags `per-run-first` and `per-run-second`): the directory holds both images, each comment embeds only its own image and the second call uploaded exactly one release asset |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
 | `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
+| `fail-invalid-context-options` | invalid JSON, a value that is not an object, an unknown key and wrong types fail with a message that names the problem, and nothing is captured |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
 | `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
 | `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
@@ -85,7 +88,10 @@ tests (`npm test`) need neither a browser nor a network.
 ## Shared pieces
 
 - `.github/scripts/assert-screenshots.mjs` - dependency free assertions (PNG
-  IHDR / JPEG SOF dimensions, counts, height bounds, type, file name rules).
+  IHDR / JPEG SOF dimensions, counts, height bounds, type, file name rules, blank
+  bands, and `--color RRGGBB[@x,y,width,height][:min[-max]]`: the share of the
+  pixels of a png, or of a region of it, that have a colour, so a scenario can
+  prove that something rendered, or that a colour is absent).
   Unit tested in `assert-screenshots.test.js`.
 - `.github/scripts/assert-pr-comment.mjs` - dependency free assertions on the
   pull request comments (JSON lines from `gh api --jq '... | tojson'`): count of
@@ -116,6 +122,11 @@ tests (`npm test`) need neither a browser nor a network.
     until scrolled into view), each labelled with its y offset and striped in
     its own colour, so every 250px band is unique (the full-page-tall scenario
     and the release scenario).
+  - `?mode=scheme` draws three 120px squares at the bottom left of the viewport
+    whose colour follows the emulated colour scheme, reduced motion and touch
+    pointer: orange / green / grey by default, blue / magenta / yellow with
+    `colorScheme: dark`, `reducedMotion: reduce` and a touch device (the
+    context-options scenario).
 - `.github/smoke-fixtures/*.mjs` - the pre-scripts of the pre-script scenarios.
 - `.github/smoke-fixtures/login-server.js` - a local login server on port 8081
   that renders the same shop theme (`demo.css`, `demo.js`): a sign-in form, then
