@@ -1,6 +1,7 @@
 // Acme Demo Shop helper: prints the measured viewport into the header band,
 // draws the 500px ruler, writes the footer marker and runs the page modes
-// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe, ?mode=problems). Text only, no dependencies.
+// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe, ?mode=problems, ?mode=app, ?theme=dark).
+// Text only, no dependencies.
 (function () {
   'use strict';
 
@@ -12,6 +13,11 @@
     body.getAttribute('data-mode') ||
     'default';
   body.setAttribute('data-mode', mode);
+  // ?theme=dark: the dark variant of the page
+  var theme = new URLSearchParams(location.search).get('theme');
+  if (theme) {
+    body.setAttribute('data-theme', theme);
+  }
 
   function $(selector) {
     return document.querySelector(selector);

@@ -30,6 +30,7 @@
     "pr-comment.js",
     "pre-script.js",
     "screenshots-dir.js",
+    "status-bar.js",
     "telegram.js",
     "utils.js"
   ],

@@ -680,6 +680,97 @@ export function compareSliced(directoryA, directoryB) {
 	return {errors, rows: shared};
 }
 
+// ---- comparing rows of two images ----
+
+// The pixel rows of a png, as hashes of their colours: an image with an alpha
+// channel and one without are the same when their colours are
+function rowHashes(file) {
+	const hashes = [];
+	decodePng(fs.readFileSync(file), (_y, row, channels) => {
+		const colors = channels >= 3 ? Buffer.alloc((row.length / channels) * 3) : row;
+		if (channels >= 3) {
+			for (let pixel = 0; pixel < row.length / channels; pixel++) {
+				row.copy(colors, pixel * 3, pixel * channels, (pixel * channels) + 3);
+			}
+		}
+
+		hashes.push(crypto.createHash('sha1').update(colors).digest('base64').slice(0, 12));
+	});
+	return hashes;
+}
+
+/**
+ Compare `rows` pixel rows of two png files, from row aStart of the first and
+ row bStart of the second: how many of them are the same. It tells a capture
+ with a status bar from one without: the rows of the bar differ, the rows of the
+ page below it (shifted by the height of the bar in strip mode) are the same.
+ @param {string} fileA The first png.
+ @param {string} fileB The second png.
+ @param {{aStart: number, bStart: number, rows: number}} range Where to start in each image and how many rows.
+ @returns {{same: number, different: number, errors: string[]}} How many rows are the same and how many differ; errors when a range is outside of an image.
+ */
+export function compareRows(fileA, fileB, {aStart, bStart, rows}) {
+	const a = rowHashes(fileA);
+	const b = rowHashes(fileB);
+	const errors = [];
+	for (const [file, hashes, start] of [[fileA, a, aStart], [fileB, b, bStart]]) {
+		if (start + rows > hashes.length) {
+			errors.push(`${file} has ${hashes.length} rows, the range ${start} to ${start + rows} is outside of it`);
+		}
+	}
+
+	if (errors.length > 0) {
+		return {same: 0, different: 0, errors};
+	}
+
+	let same = 0;
+	for (let index = 0; index < rows; index++) {
+		same += a[aStart + index] === b[bStart + index] ? 1 : 0;
+	}
+
+	return {same, different: rows - same, errors};
+}
+
+function runCompareRows(positionals, values) {
+	if (positionals.length !== 2) {
+		throw new Error('--compare-rows needs two png files');
+	}
+
+	const range = {
+		aStart: toNumber('a-start', values['a-start'] ?? '0'),
+		bStart: toNumber('b-start', values['b-start'] ?? '0'),
+		rows: toNumber('rows', values.rows),
+	};
+	if (!range.rows) {
+		throw new Error('--compare-rows needs --rows');
+	}
+
+	const expectation = values['rows-expect'] ?? 'same';
+	if (!['same', 'different'].includes(expectation)) {
+		throw new Error('--rows-expect must be same or different');
+	}
+
+	const result = compareRows(positionals[0], positionals[1], range);
+	const errors = [...result.errors];
+	if (expectation === 'same' && errors.length === 0 && result.different > 0) {
+		errors.push(`${result.different} of ${range.rows} rows differ (from row ${range.aStart} of ${positionals[0]} and row ${range.bStart} of ${positionals[1]}), expected them to be the same`);
+	}
+
+	if (expectation === 'different' && errors.length === 0 && result.different === 0) {
+		errors.push(`All ${range.rows} rows are the same (from row ${range.aStart} of ${positionals[0]} and row ${range.bStart} of ${positionals[1]}), expected some to differ`);
+	}
+
+	for (const error of errors) {
+		console.error(`::error::${error}`);
+	}
+
+	if (errors.length === 0) {
+		console.log(`OK: ${result.same} of ${range.rows} rows are the same, ${result.different} differ, as expected (${expectation})`);
+	}
+
+	return errors.length > 0 ? 1 : 0;
+}
+
 function runCompare(positionals) {
 	if (positionals.length !== 2) {
 		throw new Error('--compare-sliced needs two directories');
@@ -703,6 +794,11 @@ export function main(argv = process.argv.slice(2)) {
 		allowPositionals: true,
 		options: {
 			'compare-sliced': {type: 'boolean', default: false},
+			'compare-rows': {type: 'boolean', default: false},
+			'a-start': {type: 'string'},
+			'b-start': {type: 'string'},
+			rows: {type: 'string'},
+			'rows-expect': {type: 'string'},
 			dir: {type: 'string', default: 'screenshots'},
 			match: {type: 'string', default: '*'},
 			'expect-count': {type: 'string'},
@@ -725,6 +821,10 @@ export function main(argv = process.argv.slice(2)) {
 
 	if (values['compare-sliced']) {
 		return runCompare(positionals);
+	}
+
+	if (values['compare-rows']) {
+		return runCompareRows(positionals, values);
 	}
 
 	const {errors, rows} = checkScreenshots(values.dir, {

@@ -17,6 +17,7 @@ import {
 	analyzePng,
 	checkScreenshots,
 	colorFraction,
+	compareRows,
 	compareSliced,
 	decodePng,
 	detectFormat,
@@ -949,6 +950,81 @@ describe('the scripts when they are imported', () => {
 			expect(result.status, `${script}: ${result.stderr}`).toBe(0);
 			expect(result.stderr).toBe('');
 			expect(result.stdout).toBe('');
+		}
+	});
+});
+
+describe('compareRows', () => {
+	let directory;
+
+	beforeEach(() => {
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-rows-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(directory, {recursive: true, force: true});
+	});
+
+	// Row y is a colour that depends on y only, so equal rows have equal numbers
+	const rows = (count, shift = 0) => (_x, y) => [((y + shift) * 5) % 256, 20, 200];
+	const write = (name, height, shift = 0) => {
+		const file = path.join(directory, name);
+		fs.writeFileSync(file, encodePng(8, height, rows(height, shift)));
+		return file;
+	};
+
+	it('counts the rows that are the same and the rows that differ', () => {
+		const plain = write('plain.png', 50);
+		// A "bar" of 10 rows in other colours, then the same page shifted down by 10 rows
+		const barred = path.join(directory, 'barred.png');
+		fs.writeFileSync(barred, encodePng(8, 60, (_x, y) => (y < 10 ? [250, 250, 250] : [((y - 10) * 5) % 256, 20, 200])));
+		expect(compareRows(barred, plain, {aStart: 10, bStart: 0, rows: 50})).toEqual({same: 50, different: 0, errors: []});
+		const top = compareRows(barred, plain, {aStart: 0, bStart: 0, rows: 10});
+		expect(top.errors).toEqual([]);
+		expect(top.different).toBeGreaterThan(0);
+		expect(top.same + top.different).toBe(10);
+	});
+
+	it('is all the same for the same image and different for a shifted one', () => {
+		const a = write('a.png', 40);
+		const b = write('b.png', 40);
+		const shifted = write('shifted.png', 40, 3);
+		expect(compareRows(a, b, {aStart: 0, bStart: 0, rows: 40})).toEqual({same: 40, different: 0, errors: []});
+		expect(compareRows(a, shifted, {aStart: 0, bStart: 0, rows: 40}).different).toBe(40);
+	});
+
+	it('compares the colours, so an image with an alpha channel equals one without', () => {
+		const opaque = path.join(directory, 'opaque.png');
+		const alpha = path.join(directory, 'alpha.png');
+		fs.writeFileSync(opaque, encodePng(8, 20, rows(20)));
+		fs.writeFileSync(alpha, encodePng(8, 20, rows(20), {alpha: true}));
+		expect(compareRows(opaque, alpha, {aStart: 0, bStart: 0, rows: 20})).toEqual({same: 20, different: 0, errors: []});
+	});
+
+	it('reports a range that is outside of an image', () => {
+		const a = write('a.png', 40);
+		const result = compareRows(a, a, {aStart: 30, bStart: 0, rows: 20});
+		expect(result.errors).toHaveLength(1);
+		expect(result.errors[0]).toContain('has 40 rows, the range 30 to 50 is outside of it');
+	});
+
+	it('is wired to --compare-rows with --rows-expect', () => {
+		const a = write('a.png', 40);
+		const shifted = write('shifted.png', 40, 3);
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			expect(main(['--compare-rows', a, a, '--rows', '40'])).toBe(0);
+			expect(main(['--compare-rows', a, shifted, '--rows', '40'])).toBe(1);
+			expect(main(['--compare-rows', a, shifted, '--rows', '40', '--rows-expect', 'different'])).toBe(0);
+			expect(main(['--compare-rows', a, a, '--rows', '40', '--rows-expect', 'different'])).toBe(1);
+			expect(main(['--compare-rows', a, a, '--rows', '10', '--a-start', '5', '--b-start', '5'])).toBe(0);
+			expect(main(['--compare-rows', a, a, '--rows', '100'])).toBe(1);
+			expect(() => main(['--compare-rows', a, a])).toThrow('needs --rows');
+			expect(() => main(['--compare-rows', a])).toThrow('needs two png files');
+			expect(() => main(['--compare-rows', a, a, '--rows', '5', '--rows-expect', 'equal'])).toThrow('must be same or different');
+		} finally {
+			vi.restoreAllMocks();
 		}
 	});
 });

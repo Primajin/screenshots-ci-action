@@ -452,3 +452,45 @@ body[data-mode='iframe'] #iframe-root {
   height: 400px;
   border: 0;
 }
+
+/* ---- ?mode=app: the page without the measurement band and the ruler, so the
+   top of the page is a plain navigation bar, like the top of an app (the
+   status bar scenario and the README screenshots). ?theme=dark is its dark
+   variant, which also works on the other modes. ---- */
+body[data-mode='app'] .probe,
+body[data-mode='app'] #ruler {
+  display: none;
+}
+
+body[data-mode='app'] #page {
+  padding-left: 0;
+}
+
+body[data-mode='app'] nav {
+  flex-wrap: nowrap;
+  gap: 14px;
+  padding: 14px 16px;
+  font-size: 15px;
+}
+
+body[data-theme='dark'] {
+  --ink: #e5e7eb;
+  --muted: #94a3b8;
+  --paper: #0b0f17;
+  --line: #273244;
+  --accent: #60a5fa;
+}
+
+body[data-theme='dark'] nav,
+body[data-theme='dark'] .card {
+  background: #0b0f17;
+}
+
+body[data-theme='dark'] .card {
+  background: #131a26;
+}
+
+body[data-theme='dark'] .band.sun { background: #3b3320; }
+body[data-theme='dark'] .band.sea { background: #15333a; }
+body[data-theme='dark'] .band.leaf { background: #17321f; }
+body[data-theme='dark'] .band.rose { background: #3b1c24; }
