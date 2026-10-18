@@ -42,6 +42,12 @@ jobs:
       contents: read
     uses: ./.github/workflows/_fail_invalid-size.yml
 
+  fail-invalid-status-bar:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_invalid-status-bar.yml
+
   fail-missing-pre-script:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -160,6 +166,12 @@ jobs:
       contents: read
     uses: ./.github/workflows/_pass_sizes.yml
 
+  pass-status-bar:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_status-bar.yml
+
   pass-type:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -192,6 +204,7 @@ jobs:
       - lint-pr-title
       - fail-invalid-context-options
       - fail-invalid-size
+      - fail-invalid-status-bar
       - fail-missing-pre-script
       - fail-pre-script-error
       - fail-pre-script-timeout
@@ -211,6 +224,7 @@ jobs:
       - pass-release-pr-comment
       - pass-report-page-problems
       - pass-sizes
+      - pass-status-bar
       - pass-type
       - pass-uses-external-url
       - pass-wait-for-selector

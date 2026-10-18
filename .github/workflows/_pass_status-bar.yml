@@ -1,0 +1,206 @@
+name: "Positive Test - phone status bar"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - a mock status bar is drawn into mobile captures: strip grows the image, overlay keeps its size, the page is untouched, desktop captures are left alone"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      # The page without a bar: iPhone 13 is 390x664 at scale 3, so 1170x1992.
+      # ?mode=app has a plain white navigation bar at the top.
+      - name: Capture the baseline without a status bar
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+      - name: Assert the baseline and keep it
+        run: node .github/scripts/assert-screenshots.mjs --title "status bar, baseline" --archive-to artifacts/baseline --expect-count 1 --expect 'iPhone_13-*=1170x1992' --type png
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      - name: Capture with an iOS bar above the page (strip), dark glyphs
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: ios
+          status-bar-mode: strip
+          status-bar-theme: dark
+      - name: Assert an iOS bar above the page (strip), dark glyphs
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, ios-strip" --archive-to artifacts/ios-strip --expect-count 1 --expect 'iPhone_13-*=1170x2133' --type png
+          baseline=$(echo artifacts/baseline/iPhone_13-*.png)
+          shot=$(echo artifacts/ios-strip/iPhone_13-*.png)
+          # The rows of the bar are not the rows of the page
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 0 --b-start 0 --rows 141 --rows-expect different
+          # The page below the bar is the page of the baseline, pixel for pixel, shifted down by the bar
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 141 --b-start 0 --rows 1992 --rows-expect same
+          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-*' --expect-count 1 --color '000000@100,60,140,70:0.03'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      - name: Capture with an Android bar above the page (strip)
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: android
+          status-bar-mode: strip
+          status-bar-theme: dark
+      - name: Assert an Android bar above the page (strip)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, android-strip" --archive-to artifacts/android-strip --expect-count 1 --expect 'iPhone_13-*=1170x2064' --type png
+          baseline=$(echo artifacts/baseline/iPhone_13-*.png)
+          shot=$(echo artifacts/android-strip/iPhone_13-*.png)
+          # The rows of the bar are not the rows of the page
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 0 --b-start 0 --rows 72 --rows-expect different
+          # The page below the bar is the page of the baseline, pixel for pixel, shifted down by the bar
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 72 --b-start 0 --rows 1992 --rows-expect same
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      - name: Capture with an iOS bar over the page (overlay)
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: ios
+          status-bar-mode: overlay
+          status-bar-theme: dark
+      - name: Assert an iOS bar over the page (overlay)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, ios-overlay" --archive-to artifacts/ios-overlay --expect-count 1 --expect 'iPhone_13-*=1170x1992' --type png
+          baseline=$(echo artifacts/baseline/iPhone_13-*.png)
+          shot=$(echo artifacts/ios-overlay/iPhone_13-*.png)
+          # The rows of the bar are not the rows of the page
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 0 --b-start 0 --rows 141 --rows-expect different
+          # The page below the bar is untouched and the image has the size of the baseline
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 141 --b-start 141 --rows 1851 --rows-expect same
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      - name: Capture with an Android bar over the page (overlay)
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: android
+          status-bar-mode: overlay
+          status-bar-theme: dark
+      - name: Assert an Android bar over the page (overlay)
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, android-overlay" --archive-to artifacts/android-overlay --expect-count 1 --expect 'iPhone_13-*=1170x1992' --type png
+          baseline=$(echo artifacts/baseline/iPhone_13-*.png)
+          shot=$(echo artifacts/android-overlay/iPhone_13-*.png)
+          # The rows of the bar are not the rows of the page
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 0 --b-start 0 --rows 72 --rows-expect different
+          # The page below the bar is untouched and the image has the size of the baseline
+          node .github/scripts/assert-screenshots.mjs --compare-rows "$shot" "$baseline" --a-start 72 --b-start 72 --rows 1920 --rows-expect same
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # The theme: auto follows the colour scheme of context-options, so a dark
+      # page gets light glyphs (white pixels in the area of the clock)
+      - name: Capture a dark page with the automatic theme and a dark colour scheme
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app&theme=dark
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: ios
+          context-options: '{"colorScheme": "dark"}'
+      - name: Assert light glyphs on a dark bar
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, auto theme on a dark page" --archive-to artifacts/auto-dark --expect-count 1 --expect 'iPhone_13-*=1170x2133' --type png --color 'ffffff@100,60,140,70:0.03' --color '000000@100,60,140,70:0-0.005'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # Battery and time: a low battery is red, charging is green
+      - name: Capture with a low battery
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: ios
+          status-bar-battery: 20
+          status-bar-time: '23:59'
+      - name: Assert the red battery
+        run: node .github/scripts/assert-screenshots.mjs --title "status bar, low battery" --archive-to artifacts/battery-low --expect-count 1 --type png --color 'ff3b30@1000,75,80,50:0.03' --color '30d158@1000,75,80,50:0-0.002'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+      - name: Capture while charging
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          status-bar: ios
+          status-bar-charging: true
+      - name: Assert the green battery
+        run: node .github/scripts/assert-screenshots.mjs --title "status bar, charging" --archive-to artifacts/battery-charging --expect-count 1 --type png --color '30d158@1000,75,80,50:0.2' --color 'ff3b30@1000,75,80,50:0-0.002'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # Only mobile emulations get a bar: a plain size and the desktop sizes do not,
+      # a :mobile size does
+      - name: Capture a plain size, a mobile size and the desktop sizes with a status bar
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=app
+          sizes: 1280x720,390x844@3:mobile
+          type: png
+          status-bar: ios
+      - name: Assert only the mobile size grew
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "status bar, mobile captures only" --archive-to artifacts/mobile-only --expect-count 9 --type png --expect 'size1280x720-*=1280x720' --expect 'size390x844-3x-mobile-*=1170x2673' --expect 'desktopPage1920x1080-*=1920x1080' --expect 'desktopPage540x405-*=540x405'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # A tall page in parts: the bar is on the first part, which stays within the maximum
+      - name: Capture a tall page in parts with a status bar
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=tall
+          no-desktop: true
+          devices: iPhone 13
+          full-page: true
+          max-image-height: 4000
+          type: png
+          status-bar: ios
+      - name: Assert the first part has room for the bar and the parts add up to the page plus the bar
+        run: |
+          # 20276 css px at 3x are 60828 px, and the bar adds 141
+          node .github/scripts/assert-screenshots.mjs --title "status bar, tall page" --archive-to artifacts/tall --max-height 4000 --expect-total-height 60969 --max-empty-fraction 0.02 --distinct-parts --type png
+          node .github/scripts/assert-screenshots.mjs --match 'iPhone_13-part1-*' --expect-count 1 --max-height 4000
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-status-bar
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

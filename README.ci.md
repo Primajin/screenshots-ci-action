@@ -24,6 +24,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-sizes` | `sizes` end to end: a messy list (whitespace, an empty entry, a duplicate in another case) gives exactly four images of width x scale by height x scale (1440x900, 2880x1800 for `@2`, 1170x2532 for `390x844@3:mobile`, 1200x900 for `@1.5`) with file names that carry the scale and `-mobile` and no `@`, no desktop file with `no-desktop: true`; `:mobile` shows the touch colour of `?mode=scheme` and the same size without it does not; sizes next to the desktop capture and a device with `context-options` (the entry wins over their viewport and scale factor, the dark scheme applies); a tall page at a custom size is sliced into parts |
 | `pass-comment-section` | `comment-section` on the PR: four calls with one `comment-tag` and the headline `Component showcase`. Call 1 (desktop light, `comment-open: first`) creates the comment with one open section; call 2 (dark) adds a section after it and leaves the first byte for byte as it was (same comment id, one footer); call 3 (a `390x844@3:mobile` size) adds a third; call 4 (dark again, scale factor 2) replaces only the dark section where it is. Every step asserts the ordered section slugs, the images per section, the untouched sections and (for call 4) that the call uploaded exactly one release asset. The scenario deletes its own comment from an earlier run first, see below |
 | `pass-report-page-problems` | `report-page-problems: true` on `?mode=problems` (a console error and a page error while it loads, a `console.log` that is not a problem) with a `wait-for-selector` that times out, captured as a custom size and an iPhone 13: the screenshots are still taken, the comment has the `> [!WARNING]` block "The page reported 6 problems" with the pageerror, the console error and `never reached` of both captures and not the log; the control call without the input has no warning at all |
+| `pass-status-bar` | `status-bar` on an iPhone 13 capture of `?mode=app` (1170x1992 without a bar), proven pixel by pixel: iOS strip is 1170x2133 and Android strip 1170x2064, the rows of the bar differ from the baseline and the page below it is the baseline, row for row; overlay keeps 1170x1992 and leaves everything below the bar untouched; `status-bar-theme: auto` with a dark colour scheme draws white glyphs on a dark page; a battery of 20 is red and a charging one green; only mobile captures get a bar (a plain size and the 7 desktop sizes keep their size, a `:mobile` size grows); a tall page in parts has the bar on the first part, which stays within `max-image-height`, and the parts add up to the page plus the bar |
 | `pass-per-run-files` | two sequential calls in one job on the PR (comment tags `per-run-first` and `per-run-second`): the directory holds both images, each comment embeds only its own image and the second call uploaded exactly one release asset |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
@@ -33,6 +34,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
 | `fail-invalid-context-options` | invalid JSON, a value that is not an object, an unknown key and wrong types fail with a message that names the problem, and nothing is captured |
 | `fail-invalid-size` | a malformed entry, a width or height out of 1 to 10000, a scale of 0 or above 5 and a device name in `sizes` fail with a message that names every invalid entry and shows `WIDTHxHEIGHT[@SCALE][:mobile]`, and nothing is captured |
+| `fail-invalid-status-bar` | a time that does not exist, a battery out of 0 to 100, an unknown platform, theme or mode and a charging that is not true or false fail with a message that names the value, also with `status-bar: none`, and nothing is captured |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
 | `pass-pre-script-login` | a local login server sees the session cookie on every `GET /` (pre-script, desktop and device capture), none anonymous |
 | `pass-external-login-pre-script` | a pre-script drives the public login demo (client side only, so no session reuse is asserted) |
@@ -98,6 +100,11 @@ tests (`npm test`) need neither a browser nor a network.
   pixels of a png, or of a region of it, that have a colour, so a scenario can
   prove that something rendered, or that a colour is absent).
   Unit tested in `assert-screenshots.test.js`.
+- `--compare-rows <A> <B> --a-start N --b-start M --rows R --rows-expect same|different`
+  of `assert-screenshots.mjs` compares pixel rows of two pngs by their colours (an
+  image with an alpha channel equals one without): the status bar scenario uses
+  it to show that the rows of the bar differ from the capture without a bar and
+  that the page below them is the same, row for row.
 - `.github/scripts/assert-pr-comment.mjs` - dependency free assertions on the
   pull request comments (JSON lines from `gh api --jq '... | tojson'`): count of
   bot comments with the marker of a tag, id kept or different, number of
@@ -135,6 +142,11 @@ tests (`npm test`) need neither a browser nor a network.
     pointer: orange / green / grey by default, blue / magenta / yellow with
     `colorScheme: dark`, `reducedMotion: reduce` and a touch device (the
     context-options scenario).
+  - `?mode=app` hides the measurement band and the ruler, so the page starts with
+    a plain white navigation bar like an app; `?theme=dark` is a dark variant of
+    any mode (the status bar scenario and the screenshots of the README, which are
+    in `asset/status-bar-ios-light.jpg` and `asset/status-bar-android-dark.jpg`
+    and were made with the action itself).
   - `?mode=problems` logs a console error and a console log and throws an
     uncaught error while it loads (the report-page-problems scenario).
   - `?mode=iframe` puts a 600x400 sandboxed iframe of `http://127.0.0.1:8082/`
