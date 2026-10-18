@@ -12,7 +12,7 @@ import {buildCommentBody, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
-import {ensureScreenshotsDir, listScreenshots} from './screenshots-dir.js';
+import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -46,6 +46,10 @@ const POST_FIX = process.env.GITHUB_SHA
 const DEFAULT_WAIT_FOR_SELECTOR = '';
 
 let browser;
+
+// The files THIS call wrote. The directory is shared by every call of the action in
+// a job, so uploading, commenting and Telegram only look at these.
+const runFiles = createRunFiles(PATH);
 
 // Wait for the configured selector. A timeout must not break the flow, so the
 // error is logged and the screenshot is taken anyway (unchanged behaviour).
@@ -222,7 +226,7 @@ async function run() {
 						: `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
 
 				await desktopPage.setViewportSize({width, height});
-				await takeScreenshot(desktopPage, {
+				runFiles.add(await takeScreenshot(desktopPage, {
 					pathFor: desktopPath,
 					maxImageHeight,
 					fullPage: isFullPage,
@@ -230,7 +234,7 @@ async function run() {
 					scrollBeforeCapture: isScrollBeforeCapture,
 					waitUntil,
 					log: console.log,
-				});
+				}));
 			}
 
 			await desktopContext.close();
@@ -266,7 +270,7 @@ async function run() {
 					waitForSelectorOptions,
 				);
 
-				await takeScreenshot(page, {
+				runFiles.add(await takeScreenshot(page, {
 					pathFor: mobilePath,
 					maxImageHeight,
 					fullPage: isFullPage,
@@ -274,7 +278,7 @@ async function run() {
 					scrollBeforeCapture: isScrollBeforeCapture,
 					waitUntil,
 					log: console.log,
-				});
+				}));
 				await context.close();
 			}
 
@@ -284,7 +288,7 @@ async function run() {
 		await browser.close();
 
 		// 6. Run screenshot post task
-		await postProcesses(commentOptions);
+		await postProcesses(commentOptions, runFiles.names());
 	} catch (error) {
 		console.error(error);
 		core.setFailed(error.message);
@@ -392,10 +396,10 @@ async function uploadAndCommentImages(files, commentOptions) {
 	}
 }
 
-async function postProcesses(commentOptions) {
-	const files = await listScreenshots(PATH);
+// `files` are the names this call wrote, not everything in the directory
+async function postProcesses(commentOptions, files) {
 	if (files.length === 0) {
-		console.warn(`No screenshots were found in ${PATH}; nothing to send or post.`);
+		console.warn(`No screenshots were written to ${PATH}; nothing to send or post.`);
 		return;
 	}
 
