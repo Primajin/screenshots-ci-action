@@ -1,4 +1,4 @@
-import {readFileSync} from 'node:fs';
+import {readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
 import {describe, expect, it} from 'vitest';
 
@@ -96,5 +96,33 @@ describe('action.yml and the README', () => {
 	it('has a description for every input', () => {
 		const block = actionYml.slice(actionYml.indexOf('\ninputs:\n'), actionYml.indexOf('\nruns:\n'));
 		expect(block.match(/^ {4}description:/gmv)).toHaveLength(inputs.size);
+	});
+
+	it('reads only inputs that action.yml declares, so a typo in a getInput name is found', () => {
+		const sources = readdirSync(root).filter(file => file.endsWith('.js') && !file.endsWith('.test.js'));
+		const used = new Map();
+		for (const file of sources) {
+			for (const match of read(file).matchAll(/getInput\('(?<name>[\w\-]+)'\)/gv)) {
+				used.set(match.groups.name, file);
+			}
+		}
+
+		// The code reads most of the inputs this way, so the check is not empty
+		expect(used.size).toBeGreaterThan(20);
+		for (const [name, file] of used) {
+			expect(inputs.has(name), `${file} reads the input "${name}", which action.yml does not declare`).toBe(true);
+		}
+	});
+
+	it('reads every input that action.yml declares, so none is declared for nothing', () => {
+		const code = readdirSync(root)
+			.filter(file => file.endsWith('.js') && !file.endsWith('.test.js'))
+			.map(file => read(file))
+			.join('\n');
+		for (const name of inputs.keys()) {
+			// The pre-script inputs arrive as PRE_SCRIPT_PATH and PRE_SCRIPT_TIMEOUT
+			const isRead = code.includes(`getInput('${name}')`) || (name.startsWith('pre-script') && code.includes(name.toUpperCase().replaceAll('-', '_')));
+			expect(isRead, `action.yml declares the input "${name}", which the code never reads`).toBe(true);
+		}
 	});
 });
