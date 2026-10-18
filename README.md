@@ -12,33 +12,28 @@ Telegram chat.
 [![Playwright](https://img.shields.io/badge/playwright-chromium-2EAD33?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> **A maintained, modernized fork** of
-> [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action)
-> (last released 2022). If you're weighing the two, here's what this fork brings:
+> **Thank you, flameddd (Jacky Hu).** This action started as a fork of
+> [`flameddd/screenshots-ci-action`](https://github.com/flameddd/screenshots-ci-action).
+> Jacky created that project, came up with the idea of taking screenshots of
+> your pages from CI, and released it under the MIT license, which made this
+> version possible. Everything here builds on that foundation.
 >
-> - **`full-page: false` actually works.** The original bundles an old
->   Puppeteer 14, which ignored `full-page: false` for emulated mobile devices
->   and captured the whole scrollable page anyway (a single iPad Pro shot came
->   out ~25 000 px tall). This fork runs on **Playwright** (Chromium), so
->   viewport screenshots behave as documented.
-> - **Current runtime.** A composite action that installs its own
->   dependencies and Chromium on **Node 24**; the original still targets the
->   end-of-life `node16`.
-> - **Up-to-date device list** via Playwright's built-in device descriptors.
-> - **Actively released** with
->   [release-please](https://github.com/googleapis/release-please) — pin a stable
->   major with `Primajin/screenshots-ci-action@v4`.
+> What this version adds on top:
 >
-> The screenshots are the same kind of files as the original's and the existing
-> inputs differ in their kebab-case names, so switching is mostly a matter of
-> replacing `flameddd/screenshots-ci-action@master` with
-> `Primajin/screenshots-ci-action@v4` and renaming the inputs. Since v4 uses
-> Playwright, a few device names and `wait-until` values behave differently;
-> see [Migrating from v3](#migrating-from-v3).
-
-**New in v4:** pre-scripts (log in first), scrolling before full page captures,
-tall pages split into parts, a configurable PR comment that is edited in place,
-and more. See [What v4 does that v3 could not](#what-v4-does-that-v3-could-not).
+> - **Pre-scripts and scrolling:** log in before capturing, and scroll through
+>   a page first so lazy-loaded content is there.
+> - **Tall pages split into parts** of a configurable maximum height.
+> - **A configurable pull request comment** that is edited in place.
+> - **Playwright instead of Puppeteer:** 107 device profiles, no separate
+>   headful Chromium step, and viewport-only captures of emulated devices that
+>   behave as documented. It runs as a Node 24 composite action.
+> - **CI scenarios** that run the action against a local fixture site.
+>
+> Coming from the original? Replace `flameddd/screenshots-ci-action@master`
+> with `Primajin/screenshots-ci-action@v4` (a stable major, kept current with
+> [release-please](https://github.com/googleapis/release-please)) and rename the
+> inputs; see [Migrating from v3](#migrating-from-v3). The full list is in
+> [What v4 does that v3 could not](#what-v4-does-that-v3-could-not).
 
 ## Contents
 
