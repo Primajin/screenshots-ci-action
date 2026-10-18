@@ -234,19 +234,54 @@ async function prepareFullPage(page, options) {
 	log(`Scrolled through the page in ${steps} step(s) before the capture.`);
 }
 
-// Take a screenshot. Fixed viewport captures and full page captures that fit
-// keep the single page.screenshot call; a taller full page is captured in
-// slices (see the header comment). options.pathFor(partSuffix) returns the file
-// path of an image; resolves to the files written.
-async function takeScreenshot(page, options) {
-	const {pathFor, fullPage, type, scrollBeforeCapture, waitUntil} = options;
-
-	if (!fullPage) {
-		await page.screenshot({path: pathFor(''), fullPage, type});
-		return [pathFor('')];
+// Capture one image with the size guards and write it to `file`. A JPEG above
+// the 4.8 MB limit is captured again at a lower quality, a PNG above 5 MB only
+// logs a warning. `capture(quality)` must resolve to a Buffer; `label` names the
+// image in the log ("part 1", "the image"). Resolves to {buffer, quality}.
+async function writeImage(capture, {file, type, label, log}) {
+	let buffer;
+	let quality;
+	if (type === 'jpeg') {
+		({buffer, quality} = await captureJpegWithinLimit(capture));
+		if (buffer.length > MAX_IMAGE_BYTES) {
+			log(`${label[0].toUpperCase()}${label.slice(1)} is still ${buffer.length} bytes at quality ${quality}.`);
+		}
+	} else {
+		buffer = await capture(undefined);
+		if (buffer.length > PNG_WARN_BYTES) {
+			log(`Warning: ${label} is ${buffer.length} bytes, GitHub's image proxy refuses PNGs over 5 MB in comments.`);
+		}
 	}
 
+	await fs.writeFile(file, buffer);
+	return {buffer, quality};
+}
+
+// A capture that is one image: the viewport, or a full page that fits
+async function writeSingleImage(page, options, fullPage) {
+	const {pathFor, type, log} = options;
+	const file = pathFor('');
+	const capture = quality => page.screenshot({type, quality, fullPage});
+	await writeImage(capture, {
+		file, type, label: 'the image', log,
+	});
+	return [file];
+}
+
+// Take a screenshot. A capture of the viewport and a full page that fits are
+// one image (JPEGs step down in quality to stay below GitHub's limit); a taller
+// full page is captured in slices (see the header comment).
+// options.pathFor(partSuffix) returns the file path of an image; resolves to
+// the files written.
+async function takeScreenshot(page, options) {
+	const {fullPage, scrollBeforeCapture, waitUntil} = options;
 	const log = options.log || (() => {});
+	const settings = {...options, log};
+
+	if (!fullPage) {
+		return writeSingleImage(page, settings, false);
+	}
+
 	const maxImageHeight = options.maxImageHeight || DEFAULT_MAX_IMAGE_HEIGHT;
 
 	if (scrollBeforeCapture) {
@@ -257,8 +292,7 @@ async function takeScreenshot(page, options) {
 	const dpr = metrics.deviceScaleFactor;
 	const slices = planSlices(metrics.height, dpr, maxImageHeight);
 	if (slices.length === 1) {
-		await page.screenshot({path: pathFor(''), fullPage, type});
-		return [pathFor('')];
+		return writeSingleImage(page, settings, true);
 	}
 
 	log(
@@ -278,39 +312,19 @@ async function takeScreenshot(page, options) {
 	/* eslint-disable no-await-in-loop -- slices are captured one after another */
 	for (let index = 0; index < slices.length; index++) {
 		const slice = slices[index];
-		const file = pathFor(partSuffix(index, slices.length));
+		const file = options.pathFor(partSuffix(index, slices.length));
 		const capture = quality =>
 			page.screenshot({
-				type,
+				type: options.type,
 				quality,
 				fullPage: true,
 				clip: {
 					x: 0, y: slice.y, width: metrics.width, height: slice.height,
 				},
 			});
-		let buffer;
-		let quality;
-		if (type === 'jpeg') {
-			({buffer, quality} = await captureJpegWithinLimit(capture));
-			if (buffer.length > MAX_IMAGE_BYTES) {
-				log(
-					`Part ${index + 1} is still ${
-						buffer.length
-					} bytes at quality ${quality}.`,
-				);
-			}
-		} else {
-			buffer = await capture(undefined);
-			if (buffer.length > PNG_WARN_BYTES) {
-				log(
-					`Warning: part ${index + 1} is ${
-						buffer.length
-					} bytes, GitHub's image proxy refuses PNGs over 5 MB in comments.`,
-				);
-			}
-		}
-
-		await fs.writeFile(file, buffer);
+		const {buffer, quality} = await writeImage(capture, {
+			file, type: options.type, label: `part ${index + 1}`, log,
+		});
 		log(
 			`Part ${index + 1} of ${slices.length}: ${file} (${buffer.length} bytes${
 				quality ? `, quality ${quality}` : ''

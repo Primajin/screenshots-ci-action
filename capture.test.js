@@ -283,22 +283,74 @@ describe('takeScreenshot', () => {
 		maxImageHeight: 16_000,
 	};
 
-	it('keeps the single capture for a fixed viewport', async () => {
+	it('writes one image for a fixed viewport', async () => {
 		const page = fakePage({height: 99_999});
 		const files = await takeScreenshot(page, {...base, fullPage: false});
 		expect(files).toEqual([pathFor('')]);
-		expect(page.shots).toEqual([
-			{path: pathFor(''), fullPage: false, type: 'jpeg'},
-		]);
+		expect(page.shots).toEqual([{type: 'jpeg', quality: 80, fullPage: false}]);
+		expect(fs.readFileSync(pathFor('')).length).toBe(10);
 	});
 
-	it('keeps the single full page capture below the limit', async () => {
+	it('writes one image for a full page that fits the limit', async () => {
 		const page = fakePage({height: 16_000});
 		const files = await takeScreenshot(page, {...base, fullPage: true});
 		expect(files).toEqual([pathFor('')]);
-		expect(page.shots).toEqual([
-			{path: pathFor(''), fullPage: true, type: 'jpeg'},
-		]);
+		expect(page.shots).toEqual([{type: 'jpeg', quality: 80, fullPage: true}]);
+		expect(fs.existsSync(pathFor(''))).toBe(true);
+	});
+
+	it('steps the JPEG quality down for a viewport capture that is too large', async () => {
+		const page = fakePage({
+			height: 700,
+			bytes: options => (options.quality > 60 ? 5 * 1024 * 1024 : 1234),
+		});
+		const files = await takeScreenshot(page, {...base, fullPage: false});
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60]);
+		expect(fs.readFileSync(files[0]).length).toBe(1234);
+	});
+
+	it('steps the JPEG quality down for a full page that fits one image (the gap the single capture had)', async () => {
+		const page = fakePage({
+			height: 3000,
+			bytes: options => (options.quality > 50 ? 6 * 1024 * 1024 : 4321),
+		});
+		const files = await takeScreenshot(page, {...base, fullPage: true});
+		expect(files).toEqual([pathFor('')]);
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60, 50]);
+		expect(page.shots.every(shot => shot.fullPage === true && shot.clip === undefined)).toBe(true);
+		expect(fs.readFileSync(files[0]).length).toBe(4321);
+	});
+
+	it('logs when a single JPEG is still too large at the lowest quality', async () => {
+		const page = fakePage({height: 700, bytes: () => 6 * 1024 * 1024});
+		const logs = [];
+		await takeScreenshot(page, {
+			...base,
+			fullPage: true,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60, 50, 40]);
+		expect(logs).toEqual([`The image is still ${6 * 1024 * 1024} bytes at quality 40.`]);
+	});
+
+	it('does not step a PNG down but warns about a huge single image', async () => {
+		const page = fakePage({height: 700, bytes: () => (5 * 1024 * 1024) + 1});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			pathFor: part => path.join(directory, `shot${part}.png`),
+			type: 'png',
+			fullPage: false,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(page.shots).toEqual([{type: 'png', quality: undefined, fullPage: false}]);
+		expect(files).toHaveLength(1);
+		expect(logs).toHaveLength(1);
+		expect(logs[0]).toContain('Warning: the image is');
 	});
 
 	it('scrolls through the page before a full page capture', async () => {
