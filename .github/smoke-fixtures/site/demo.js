@@ -1,6 +1,6 @@
 // Acme Demo Shop helper: prints the measured viewport into the header band,
 // draws the 500px ruler, writes the footer marker and runs the page modes
-// (?mode=late, ?mode=wait-until). Text only, no dependencies.
+// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe). Text only, no dependencies.
 (function () {
   'use strict';
 
@@ -118,6 +118,17 @@
     refresh();
   }
 
+  // ?mode=iframe: a sandboxed iframe of another site (http://127.0.0.1:8082/ by
+  // default, ?iframe=<url> to change it) 1500px down the page, like a map embed
+  function startIframeMode() {
+    var frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('title', 'a page of another site');
+    frame.src = new URLSearchParams(location.search).get('iframe') || 'http://127.0.0.1:8082/';
+    $('#iframe-root').appendChild(frame);
+    refresh();
+  }
+
   function printTimings() {
     var panel = $('#timings');
     if (panel) {
@@ -168,5 +179,7 @@
     startTallMode();
   } else if (mode === 'wait-until') {
     printTimings();
+  } else if (mode === 'iframe') {
+    startIframeMode();
   }
 })();

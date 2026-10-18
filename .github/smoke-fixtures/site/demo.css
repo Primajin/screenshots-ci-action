@@ -425,3 +425,30 @@ body[data-mode='scheme'] #scheme-probe {
 @media (hover: none) and (pointer: coarse) {
   #scheme-touch { background: #ffee00; }
 }
+
+/* ---- ?mode=iframe: a 600x400 sandboxed iframe of another site at x=64, y=1500,
+   below the first viewport; the page is 2200px high at least ---- */
+#iframe-root {
+  display: none;
+}
+
+body[data-mode='iframe'] main {
+  min-height: 2200px;
+}
+
+body[data-mode='iframe'] #iframe-root {
+  display: block;
+  position: absolute;
+  left: 64px;
+  top: 1500px;
+  width: 600px;
+  height: 400px;
+  background: #dddddd;
+}
+
+#iframe-root iframe {
+  display: block;
+  width: 600px;
+  height: 400px;
+  border: 0;
+}
