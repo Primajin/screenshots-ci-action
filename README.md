@@ -46,7 +46,9 @@ Telegram chat.
 - [Custom sizes](#custom-sizes) (`sizes`: your own width, height and scale)
 - [Page problems](#page-problems) (`report-page-problems`: errors of the page as a warning)
 - [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
+- [Phone status bar](#phone-status-bar) (`status-bar`: a mock iOS or Android status bar in mobile captures)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
+- [Capturing a page like aktion does](#capturing-a-page-like-aktion-does) (three looks, one comment)
 - [Examples](#examples)
 - [Devices and desktop sizes](#desktop-sizes)
 - [Migrating from v3](#migrating-from-v3)
@@ -142,6 +144,12 @@ All inputs are optional except `url`. How switches are read differs a little:
 | `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
 | `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
 | `context-options` | `''` | A JSON object with Playwright browser context options that are applied to **every** capture, desktop and devices: `colorScheme`, `reducedMotion`, `forcedColors`, `deviceScaleFactor`, `isMobile`, `hasTouch`, `viewport`, `locale`, `timezoneId`, `userAgent`. Invalid JSON, an unknown key or a wrong type fails the run. A `viewport` replaces the 7 fixed desktop sizes with that one. See [Context options](#context-options). |
+| `status-bar` | `none` | `ios` or `android`: draw a **mock** phone status bar (clock, signal, wifi, battery) into the captures that emulate a mobile device: devices with `isMobile` and [`sizes`](#custom-sizes) entries with `:mobile`. Other captures ignore it (logged). A wrong value fails the run. See [Phone status bar](#phone-status-bar). |
+| `status-bar-time` | `9:41` | The clock, `H:MM` or `HH:MM` from `0:00` to `23:59`. An invalid value fails the run. |
+| `status-bar-battery` | `100` | The battery level, a whole number from 0 to 100 (red up to 20). An invalid value fails the run. |
+| `status-bar-charging` | `false` | `true` draws the battery as charging: green, with a bolt. |
+| `status-bar-theme` | `auto` | The colour of the glyphs: `light` (light glyphs for a dark page), `dark` (dark glyphs for a light page) or `auto`: dark glyphs, or light ones when [`context-options`](#context-options) sets `colorScheme: dark`. |
+| `status-bar-mode` | `strip` | `strip`: the bar is drawn **above** the capture and the image grows by the height of the bar (47 CSS px for `ios`, 24 for `android`). `overlay`: the bar is drawn **over the top** of the capture and the size does not change. |
 | `type` | `jpeg` | The file type, `jpeg` or `png`. |
 | `no-commit-hash-file-name` | `false` | Set `true` to leave the commit hash out of the file names. See [Output files](#output-files). |
 
@@ -497,6 +505,97 @@ JSON object; only these keys are accepted:
 - **Several looks of one page.** Call the action once per look (one call per
   `context-options`); every call writes its own files.
 
+## Phone status bar
+
+Screenshots for an app store listing or a design review often need the strip
+at the top of a phone: the clock, the signal, wifi and battery. With
+`status-bar: ios` or `status-bar: android` the action draws one into the
+captures that **emulate a mobile device**: the devices with `isMobile` (every
+phone and tablet profile) and the `sizes` entries with `:mobile`. A desktop
+size or a plain `sizes` entry is left alone (the log says so), so one call can
+mix them.
+
+| iOS, light: `status-bar: ios` | Android, dark: `status-bar: android` with `status-bar-theme: light` |
+| --- | --- |
+| <img src="./asset/status-bar-ios-light.jpg" alt="The top of the demo page captured as an iPhone 13 with an iOS status bar: the clock 9:41 on the left, signal, wifi and a full battery on the right, dark glyphs on white" width="300"> | <img src="./asset/status-bar-android-dark.jpg" alt="The top of the dark demo page captured as a Pixel 7 with an Android status bar: the clock 9:41 on the left, wifi, signal and a full battery on the right, light glyphs on near black" width="300"> |
+
+The snippets that made them (a viewport capture of the demo page of this
+repository, 1170 × 2133 and 1082 × 2265 pixels):
+
+```yaml
+# iOS, light page, dark glyphs
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    no-desktop: true
+    devices: iPhone 13
+    status-bar: ios
+    status-bar-theme: dark
+```
+
+```yaml
+# Android, dark page, light glyphs
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/?theme=dark
+    no-desktop: true
+    devices: Pixel 7
+    status-bar: android
+    status-bar-theme: light
+```
+
+What you can set:
+
+- **Time and battery.** `status-bar-time` is `H:MM` or `HH:MM` (default `9:41`),
+  `status-bar-battery` a whole number from 0 to 100 (default 100; up to 20 the
+  level is red), `status-bar-charging: true` draws it green with a bolt.
+- **Glyph colour.** `status-bar-theme: dark` draws dark glyphs for a light page,
+  `light` light glyphs for a dark page. `auto` (the default) is dark, or light
+  when `context-options` sets `"colorScheme": "dark"`.
+- **`strip` (default).** The bar is drawn **above** the capture and the image
+  grows by the height of the bar: 47 CSS pixels for iOS, 24 for Android (times
+  the scale factor: an iPhone 13 capture of 1170 × 1992 pixels becomes
+  1170 × 2133). The bar gets the colour of the top edge of the page, so a page that
+  starts with a white bar gets a white bar, and the page itself is untouched,
+  pixel for pixel. **`overlay`** draws the bar **over the top** of the capture
+  and the size does not change, for when you need the exact size of the device;
+  the page has to leave room for it.
+- **Tall pages in parts** (`full-page` with `max-image-height`): the bar is on the
+  **first part** only. In `strip` mode that part holds less of the page, so it
+  still stays within `max-image-height`; `overlay` changes no height. The JPEG
+  size guard (the 4.8 MB step-down) applies after the bar is drawn, and the
+  upload, the comment, Telegram and the artifact get the finished files; the file
+  names do not change.
+  With a very small `max-image-height` the first part can still **exceed** it: the
+  bar alone is 141 pixels high on an iPhone 13 (47 CSS pixels at 3x), so a maximum
+  below that cannot be kept, and the first slice then holds one CSS pixel of the page
+  next to the bar.
+- **Every mobile profile gets the phone bar.** The check is `isMobile`, so a
+  landscape profile (`iPhone 13 landscape`) or a tablet (`iPad Pro 11`) also gets
+  the bar of the platform you chose, across the top of the wide image. Pick the
+  devices you want it on, or put them in another call.
+- **PNG files have an alpha channel** (every pixel opaque) when a bar was drawn:
+  the browser encodes the canvas that way.
+- **A capture too large to draw on** (the browser's canvas has a size limit) fails
+  the run with "The image is too large to add a status bar (canvas limit)" and
+  its size, instead of writing an empty file; lower `max-image-height` (only the
+  first part gets the bar).
+- **Mistakes fail the run.** An unknown platform, theme or mode, a time that is
+  not `H:MM` or `HH:MM` up to `23:59`, a battery that is not a whole number from
+  0 to 100 or a `status-bar-charging` that is not `true` or `false` stops the run
+  before a browser is started, also with `status-bar: none`: a wrong screenshot
+  is worse than a failed run.
+
+It is a **mock**, drawn for you, and it does not claim to be the system's own:
+there is no notch or dynamic island, one geometry per platform (the iOS bar is
+the 47 pixel one of the notch era, a phone with a dynamic island has 54), the
+signal is always full and the wifi too, and the glyphs use the system fonts of
+the machine: `-apple-system` / `SF Pro` on iOS and Roboto on Android where they
+exist, otherwise a plain sans-serif (the GitHub runners have no San Francisco, so
+the clock is DejaVu Sans there and its shapes differ from a phone's). Nothing is
+fetched and no extra dependency is installed: the bar is HTML and inline SVG
+drawn in Chromium and combined with the screenshot there.
+
 ## PR comments
 
 With `release-id` and a `pull_request` workflow the action uploads every
@@ -754,6 +853,128 @@ long the list is cut with "…and N more". An unknown value for an enum input
 or an invalid `comment-image-width` is logged as a warning and the default is
 used. Characters of `comment-tag` other than letters, digits (of any language),
 space, dot, dash and underscore are replaced with `-`, with a warning.
+
+## Capturing a page like aktion does
+
+[asfand-dev/aktion](https://github.com/asfand-dev/aktion) took the screenshots of
+its component showcase with a script of its own: three looks of one tall page
+(desktop light, desktop dark, mobile) in **one** pull request comment, the page
+grown to its full height so that an embedded map renders, and the errors of the
+page as a warning. Five inputs of this action do the same:
+
+| What the script did | Input |
+| --- | --- |
+| a 1440 × 900 viewport at scale 1, a 390 × 844 phone | [`sizes`](#custom-sizes): `1440x900`, `390x844:mobile` |
+| dark theme, reduced motion | [`context-options`](#context-options): `{"colorScheme": "dark", "reducedMotion": "reduce"}` |
+| grow the viewport to the page, then take clips | [`full-page-strategy: grow-viewport`](#tall-pages) |
+| one comment, one section per look | [`comment-section`](#pr-comments) |
+| errors of the page and "never signalled ready" as a warning | [`report-page-problems`](#page-problems) with `wait-for-selector` |
+
+```yaml
+name: Screenshots
+on:
+  pull_request:
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: write       # upload the images to a release
+  pull-requests: write  # post and edit the comment
+
+concurrency:
+  group: screenshots-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      PAGE: https://example.github.io/app/pr-preview/pr-${{ github.event.number }}/showcase.html
+    steps:
+    - name: Find the release the images are uploaded to
+      id: release
+      run: echo "id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/image-holder" --jq .id)" >> "$GITHUB_OUTPUT"
+      env:
+        GH_TOKEN: ${{ github.token }}
+
+    # Calls with the same comment-tag run one after the other, so the sections
+    # merge into one comment
+    - name: Desktop, light theme
+      uses: Primajin/screenshots-ci-action@v4
+      with:
+        url: ${{ env.PAGE }}?theme=light&capture=1
+        no-desktop: true
+        sizes: 1440x900
+        context-options: '{"colorScheme": "light", "reducedMotion": "reduce"}'
+        full-page: true
+        full-page-strategy: grow-viewport
+        wait-until: load
+        wait-for-selector: 'html[data-showcase="ready"]'
+        wait-for-selector-timeout: 45000
+        report-page-problems: true
+        release-id: ${{ steps.release.outputs.id }}
+        comment-tag: showcase
+        comment-headline: Component showcase
+        comment-section: Desktop · light theme
+        comment-open: first
+
+    - name: Desktop, dark theme
+      uses: Primajin/screenshots-ci-action@v4
+      with:
+        url: ${{ env.PAGE }}?theme=dark&capture=1
+        no-desktop: true
+        sizes: 1440x900
+        context-options: '{"colorScheme": "dark", "reducedMotion": "reduce"}'
+        full-page: true
+        full-page-strategy: grow-viewport
+        wait-until: load
+        wait-for-selector: 'html[data-showcase="ready"]'
+        wait-for-selector-timeout: 45000
+        report-page-problems: true
+        release-id: ${{ steps.release.outputs.id }}
+        comment-tag: showcase
+        comment-headline: Component showcase
+        comment-section: Desktop · dark theme
+
+    - name: Mobile, light theme
+      uses: Primajin/screenshots-ci-action@v4
+      with:
+        url: ${{ env.PAGE }}?theme=light&capture=1
+        no-desktop: true
+        sizes: 390x844:mobile
+        context-options: '{"colorScheme": "light", "reducedMotion": "reduce"}'
+        full-page: true
+        full-page-strategy: grow-viewport
+        wait-until: load
+        wait-for-selector: 'html[data-showcase="ready"]'
+        wait-for-selector-timeout: 45000
+        report-page-problems: true
+        release-id: ${{ steps.release.outputs.id }}
+        comment-tag: showcase
+        comment-headline: Component showcase
+        comment-section: Mobile · light theme
+```
+
+How it differs from the script, on purpose or not:
+
+- The comment has the headline and a footer with the commit and the run, not
+  a paragraph of your own text; the sections are named by `comment-section`.
+- Only the first call has `comment-open: first`: with several calls each `first`
+  would open its own section.
+- A section of a look that you remove from the workflow stays in the comment
+  until the comment is deleted; the calls must run one after the other (steps of
+  one job do), see [PR comments](#pr-comments).
+- The script waited for the page to signal that it was ready and then logged
+  when it was not; here the wait for the selector times out after 45 seconds
+  and the screenshot is taken anyway, with `report-page-problems` showing
+  `never reached html[data-showcase="ready"]` and the page's errors in the
+  comment and in the annotations of the run.
+- The script switched off CSS animations and the text caret for the capture
+  (`animations: disabled`); `reducedMotion` asks the page to, which a page that
+  honours `prefers-reduced-motion` does.
+- Images are JPEGs from the action's own Chromium (not the system Chrome), taken
+  at scale 1 and split into parts of at most 16000 pixels
+  (`max-image-height`), like the script did.
 
 ## Examples
 

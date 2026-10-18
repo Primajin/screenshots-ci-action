@@ -166,24 +166,33 @@ function cssGranule(deviceScaleFactor) {
 // Split a document into consecutive slices whose output stays within
 // maxImageHeight device pixels. A document that fits yields one slice. Returns
 // {y, height}[] in CSS pixels, covering the whole document without gaps or
-// overlap; only the last slice may be shorter.
-function planSlices(documentHeight, deviceScaleFactor, requestedMaxHeight) {
+// overlap; only the last slice may be shorter. `reservedCss` is room the first
+// image needs besides its slice (the status bar of the strip mode): the first
+// slice is that much shorter, and a document only fits one image with it.
+function planSlices(documentHeight, deviceScaleFactor, requestedMaxHeight, reservedCss = 0) {
 	// A slice is at least one CSS pixel, that is ceil(dpr) output pixels.
 	const maxImageHeight = Math.max(requestedMaxHeight, Math.ceil(deviceScaleFactor));
-	if (Math.ceil(documentHeight * deviceScaleFactor) <= maxImageHeight) {
+	const reservedPx = Math.ceil(reservedCss * deviceScaleFactor);
+	if (Math.ceil(documentHeight * deviceScaleFactor) + reservedPx <= maxImageHeight) {
 		return [{y: 0, height: documentHeight}];
 	}
 
 	const granule = cssGranule(deviceScaleFactor);
-	let sliceHeight
-		= Math.floor(maxImageHeight / deviceScaleFactor / granule) * granule;
-	if (sliceHeight < 1) {
-		sliceHeight = Math.max(1, Math.floor(maxImageHeight / deviceScaleFactor));
-	}
+	const sliceFor = available => {
+		const height = Math.floor(available / deviceScaleFactor / granule) * granule;
+		return height < 1 ? Math.max(1, Math.floor(available / deviceScaleFactor)) : height;
+	};
+
+	const sliceHeight = sliceFor(maxImageHeight);
+	// The first slice leaves room for what is added to it; it still has a CSS pixel
+	const firstHeight = reservedPx > 0 ? sliceFor(Math.max(maxImageHeight - reservedPx, deviceScaleFactor)) : sliceHeight;
 
 	const slices = [];
-	for (let y = 0; y < documentHeight; y += sliceHeight) {
-		slices.push({y, height: Math.min(sliceHeight, documentHeight - y)});
+	let y = 0;
+	while (y < documentHeight) {
+		const height = Math.min(slices.length === 0 ? firstHeight : sliceHeight, documentHeight - y);
+		slices.push({y, height});
+		y += height;
 	}
 
 	return slices;
@@ -363,13 +372,29 @@ async function writeImage(capture, {file, type, label, log}) {
 	return {buffer, quality};
 }
 
+// How one image is captured. The first image may get a status bar: then the
+// capture is taken once as a lossless PNG, the bar is composited into it and the
+// result is encoded with the type and quality that are asked for (again for every
+// quality of the JPEG step-down, which so applies after the compositing).
+function captureFor(page, options, screenshot, isFirst) {
+	const {type, statusBar} = options;
+	if (!statusBar || !isFirst) {
+		return quality => page.screenshot({type, quality, ...screenshot});
+	}
+
+	let png;
+	return async quality => {
+		png ??= await page.screenshot({type: 'png', ...screenshot});
+		return statusBar.compose(png, {type, quality});
+	};
+}
+
 // A capture that is one image: the viewport, a full page that fits, or the
 // whole grown viewport (clip)
 async function writeSingleImage(page, options, screenshot) {
 	const {pathFor, type, log} = options;
 	const file = pathFor('');
-	const capture = quality => page.screenshot({type, quality, ...screenshot});
-	await writeImage(capture, {
+	await writeImage(captureFor(page, options, screenshot, true), {
 		file, type, label: 'the image', log,
 	});
 	return [file];
@@ -383,8 +408,7 @@ async function writeSlices(page, options, {slices, screenshot}) {
 	/* eslint-disable no-await-in-loop -- slices are captured one after another */
 	for (const [index, slice] of slices.entries()) {
 		const file = options.pathFor(partSuffix(index, slices.length));
-		const capture = quality =>
-			page.screenshot({type: options.type, quality, ...screenshot(slice)});
+		const capture = captureFor(page, options, screenshot(slice), index === 0);
 		const {buffer, quality} = await writeImage(capture, {
 			file, type: options.type, label: `part ${index + 1}`, log: options.log,
 		});
@@ -425,7 +449,7 @@ async function takeScrolledScreenshot(page, options) {
 
 	const metrics = await measureDocument(page);
 	const dpr = metrics.deviceScaleFactor;
-	const slices = planSlices(metrics.height, dpr, maxImageHeight);
+	const slices = planSlices(metrics.height, dpr, maxImageHeight, options.statusBar?.reserveCss);
 	if (slices.length === 1) {
 		return writeSingleImage(page, options, {fullPage: true});
 	}
@@ -465,7 +489,7 @@ async function takeGrownScreenshot(page, options) {
 		const clip = slice => ({
 			x: 0, y: slice.y, width: grown.width, height: slice.height,
 		});
-		const slices = planSlices(height, dpr, maxImageHeight);
+		const slices = planSlices(height, dpr, maxImageHeight, options.statusBar?.reserveCss);
 		if (slices.length === 1) {
 			return await writeSingleImage(page, options, {fullPage: false, clip: clip(slices[0])});
 		}
@@ -486,7 +510,7 @@ async function takeGrownScreenshot(page, options) {
  image (JPEGs step down in quality to stay below GitHub's limit); a taller full
  page is captured in slices, see the header comment.
  @param {object} page A Playwright page.
- @param {{pathFor: (partSuffix: string) => string, type: string, fullPage?: boolean, strategy?: string, scrollBeforeCapture?: boolean, waitUntil?: string, maxImageHeight?: number, log?: (message: string) => void, grow?: object}} options What to capture; pathFor returns the file path of an image (or of a part, given its suffix).
+ @param {{pathFor: (partSuffix: string) => string, type: string, statusBar?: {reserveCss: number, compose: (png: Buffer, settings: {type: string, quality?: number}) => Promise<Buffer>}, fullPage?: boolean, strategy?: string, scrollBeforeCapture?: boolean, waitUntil?: string, maxImageHeight?: number, log?: (message: string) => void, grow?: object}} options What to capture; pathFor returns the file path of an image (or of a part, given its suffix).
  @returns {Promise<string[]>} The files written.
  */
 async function takeScreenshot(page, options) {

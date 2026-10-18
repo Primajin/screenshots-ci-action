@@ -19,6 +19,7 @@ import {readImageSize} from './image-size.js';
 import {annotateProblems, createProblemCollector} from './page-problems.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
 import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
+import {createStatusBar, resolveGlyphColor, resolveStatusBarOptions} from './status-bar.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -139,6 +140,15 @@ function readConfig() {
 		fullPageStrategy: resolveFullPageStrategy(core.getInput('full-page-strategy')),
 		// Collect what the pages report (errors, a selector never reached) and show it as warnings
 		isReportingPageProblems: core.getInput('report-page-problems').toLowerCase() === 'true',
+		// A mock phone status bar for mobile captures; a wrong value fails the run here
+		statusBar: resolveStatusBarOptions({
+			statusBar: core.getInput('status-bar'),
+			time: core.getInput('status-bar-time'),
+			battery: core.getInput('status-bar-battery'),
+			charging: core.getInput('status-bar-charging'),
+			theme: core.getInput('status-bar-theme'),
+			mode: core.getInput('status-bar-mode'),
+		}),
 		// Only matters for full page captures; on unless explicitly switched off.
 		isScrollBeforeCapture: isScrollEnabled(core.getInput('scroll-before-capture')),
 		maxImageHeight: maxImage.value,
@@ -179,6 +189,7 @@ function logConfig(config) {
 		waitForSelector: config.waitForSelector,
 		waitForSelectorOptions: config.waitForSelectorOptions,
 		contextOptions: config.contextOverrides,
+		statusBar: config.statusBar,
 		comment: config.commentOptions,
 	});
 	core.endGroup(); // Action config
@@ -218,8 +229,9 @@ async function runConfiguredPreScript(url) {
 }
 
 // The options of takeScreenshot that every capture shares
-const screenshotOptions = (config, pathFor) => ({
+const screenshotOptions = (config, pathFor, statusBar) => ({
 	pathFor,
+	statusBar,
 	maxImageHeight: config.maxImageHeight,
 	fullPage: config.isFullPage,
 	strategy: config.fullPageStrategy,
@@ -242,6 +254,24 @@ function watchPage(page, config, label) {
 	if (config.isReportingPageProblems) {
 		pageProblems.attach(page, label);
 	}
+}
+
+// The status bar of the captures of a context: only a capture that emulates a
+// mobile device gets one (the context options are what the page is created with)
+function buildStatusBar(config, contextOptions, label) {
+	const {platform, mode, time, battery} = config.statusBar;
+	if (platform === 'none') {
+		return undefined;
+	}
+
+	if (contextOptions.isMobile !== true) {
+		console.log(`status-bar is ignored for ${label}: it is not a mobile capture (isMobile is off).`);
+		return undefined;
+	}
+
+	console.log(`Status bar for ${label}: ${platform}, ${mode}, ${time}, battery ${battery}%.`);
+	const glyphs = resolveGlyphColor(config.statusBar.theme, contextOptions.colorScheme);
+	return createStatusBar(browser, {...config.statusBar, glyphs}, contextOptions.deviceScaleFactor ?? 1);
 }
 
 // Open the page and wait for the configured selector, if any
@@ -270,20 +300,20 @@ async function captureDesktop(config, storageState) {
 		console.log(`context-options sets a viewport: capturing only ${width}x${height} instead of the ${DEFAULT_DESKTOP_VIEWPOINT_RATIO.length} desktop sizes.`);
 	}
 
-	const desktopContext = await browser.newContext(
-		buildContextOptions(
-			{viewport: desktopSizes[0]},
-			storageState,
-			config.contextOverrides,
-		),
+	const desktopContextOptions = buildContextOptions(
+		{viewport: desktopSizes[0]},
+		storageState,
+		config.contextOverrides,
 	);
+	const desktopContext = await browser.newContext(desktopContextOptions);
+	const statusBar = buildStatusBar(config, desktopContextOptions, 'Desktop');
 	const desktopPage = await desktopContext.newPage();
 	watchPage(desktopPage, config, 'Desktop');
 	await openPage(desktopPage, config, 'Desktop');
 
 	for (const {width, height} of desktopSizes) {
 		await desktopPage.setViewportSize({width, height});
-		const options = screenshotOptions(config, pathForBase(config, `desktopPage${width}x${height}`));
+		const options = screenshotOptions(config, pathForBase(config, `desktopPage${width}x${height}`), statusBar);
 		runFiles.add(await takeScreenshot(desktopPage, options));
 	}
 
@@ -301,7 +331,8 @@ async function captureInNewContext(config, contextOptions, base) {
 	const label = captureLabel(base);
 	watchPage(page, config, label);
 	await openPage(page, config, label);
-	const options = screenshotOptions(config, pathForBase(config, base));
+	const statusBar = buildStatusBar(config, contextOptions, label);
+	const options = screenshotOptions(config, pathForBase(config, base), statusBar);
 	runFiles.add(await takeScreenshot(page, options));
 	await context.close();
 }

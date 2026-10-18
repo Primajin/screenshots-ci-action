@@ -40,6 +40,30 @@ inputs:
     required: false
     description: "JSON object with Playwright browser context options that are applied to every capture, desktop and devices: colorScheme (light, dark, no-preference), reducedMotion (reduce, no-preference), forcedColors (active, none), deviceScaleFactor (number above 0, at most 5), isMobile, hasTouch (booleans), viewport ({width, height} up to 10000, replaces the 7 fixed desktop sizes with this single one), locale (a language tag), timezoneId (an IANA time zone), userAgent. They win over a device's own values; the pre-script session is never overridden. Invalid JSON, an unknown key or a wrong type fails the run. e.g. {\"colorScheme\": \"dark\", \"reducedMotion\": \"reduce\"}"
     default: ''
+  status-bar:
+    required: false
+    description: "none (default), ios or android: draw a MOCK phone status bar (clock, signal, wifi, battery) into the captures that emulate a mobile device (devices with isMobile and sizes entries with :mobile). Other captures ignore it. See README, Phone status bar."
+    default: 'none'
+  status-bar-time:
+    required: false
+    description: "The clock of the status bar, H:MM or HH:MM from 0:00 to 23:59. An invalid value fails the run. Defaults to 9:41."
+    default: '9:41'
+  status-bar-battery:
+    required: false
+    description: "The battery level of the status bar, a whole number from 0 to 100. An invalid value fails the run. Defaults to 100."
+    default: '100'
+  status-bar-charging:
+    required: false
+    description: "Draw the battery of the status bar as charging (green, with a bolt). true or false, defaults to false."
+    default: false
+  status-bar-theme:
+    required: false
+    description: "Colour of the glyphs of the status bar: auto (default: dark glyphs, or light ones when context-options sets colorScheme dark), light (light glyphs for a dark page) or dark (dark glyphs for a light page)."
+    default: 'auto'
+  status-bar-mode:
+    required: false
+    description: "strip (default): the bar is drawn above the capture and the image grows by the height of the bar (47 CSS px for ios, 24 for android). overlay: the bar is drawn over the top of the capture and the size does not change."
+    default: 'strip'
   type:
     required: false
     description: "Screenshot file type: jpeg or png. Defaults to 'jpeg'."
@@ -171,6 +195,12 @@ runs:
         INPUT_SCROLL-BEFORE-CAPTURE: ${{ inputs.scroll-before-capture }}
         INPUT_MAX-IMAGE-HEIGHT: ${{ inputs.max-image-height }}
         INPUT_CONTEXT-OPTIONS: ${{ inputs.context-options }}
+        INPUT_STATUS-BAR: ${{ inputs.status-bar }}
+        INPUT_STATUS-BAR-TIME: ${{ inputs.status-bar-time }}
+        INPUT_STATUS-BAR-BATTERY: ${{ inputs.status-bar-battery }}
+        INPUT_STATUS-BAR-CHARGING: ${{ inputs.status-bar-charging }}
+        INPUT_STATUS-BAR-THEME: ${{ inputs.status-bar-theme }}
+        INPUT_STATUS-BAR-MODE: ${{ inputs.status-bar-mode }}
         INPUT_TYPE: ${{ inputs.type }}
         INPUT_NO-COMMIT-HASH-FILE-NAME: ${{ inputs.no-commit-hash-file-name }}
         INPUT_WAIT-UNTIL: ${{ inputs.wait-until }}

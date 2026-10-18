@@ -812,3 +812,207 @@ describe('takeScreenshot with the grow-viewport strategy', () => {
 		expect(page.state.shots[0].clip).toBeUndefined();
 	});
 });
+
+describe('planSlices with room reserved for the first image', () => {
+	it('is the same without a reserve', () => {
+		expect(planSlices(20_276, 1, 16_000, 0)).toEqual(planSlices(20_276, 1, 16_000));
+	});
+
+	it('still fits one image when the reserve fits too', () => {
+		// 15,900 + 47 = 15,947 output pixels
+		expect(planSlices(15_900, 1, 16_000, 47)).toEqual([{y: 0, height: 15_900}]);
+	});
+
+	it('needs a second slice when only the reserve does not fit any more', () => {
+		expect(planSlices(15_980, 1, 16_000, 47)).toEqual([
+			{y: 0, height: 15_953},
+			{y: 15_953, height: 27},
+		]);
+	});
+
+	it('makes the first slice shorter by the reserve and keeps the others at the maximum', () => {
+		const slices = planSlices(60_000, 1, 16_000, 47);
+		expect(slices[0]).toEqual({y: 0, height: 15_953});
+		expect(slices[1]).toEqual({y: 15_953, height: 16_000});
+	});
+
+	it('counts the reserve in output pixels at a scale factor of 3', () => {
+		// 47 css px = 141 px: (4000 - 141) / 3 = 1286 css px, 3858 + 141 = 3999 px
+		const slices = planSlices(20_276, 3, 4000, 47);
+		expect(slices[0].height).toBe(1286);
+		expect((slices[0].height * 3) + (47 * 3)).toBeLessThanOrEqual(4000);
+		expect(slices[1].height).toBe(1333);
+	});
+
+	it('covers the document without gaps or overlap and keeps the first image within the limit', () => {
+		const cases = [];
+		for (const dpr of [1, 1.5, 2, 2.625, 3]) {
+			for (const max of [16_000, 4000, 1234]) {
+				for (const reserved of [24, 47]) {
+					cases.push(...[1, 999, 4000, 16_001, 20_276, 60_000].map(height => ({
+						dpr, max, reserved, height,
+					})));
+				}
+			}
+		}
+
+		for (const {dpr, max, reserved, height} of cases) {
+			const slices = planSlices(height, dpr, max, reserved);
+			const starts = slices.map(slice => slice.y);
+			const expectedStarts = slices.map((_, index) => slices.slice(0, index).reduce((sum, slice) => sum + slice.height, 0));
+			expect(starts).toEqual(expectedStarts);
+			expect(slices.every(slice => slice.height > 0)).toBe(true);
+			expect(slices.reduce((sum, slice) => sum + slice.height, 0)).toBe(height);
+			if (slices.length > 1) {
+				expect((slices[0].height * dpr) + Math.ceil(reserved * dpr)).toBeLessThanOrEqual(max + 1e-9);
+			}
+		}
+	});
+
+	it('keeps a CSS pixel for the first slice however small the maximum is', () => {
+		const slices = planSlices(10, 3, 100, 47);
+		expect(slices[0].height).toBeGreaterThanOrEqual(1);
+		expect(slices.reduce((sum, slice) => sum + slice.height, 0)).toBe(10);
+	});
+});
+
+describe('takeScreenshot with a status bar', () => {
+	let directory;
+
+	beforeEach(() => {
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-bar-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(directory, {recursive: true, force: true});
+	});
+
+	const pathFor = part => path.join(directory, `shot${part}-abc1234.jpeg`);
+	const base = {
+		pathFor,
+		type: 'jpeg',
+		fullPage: true,
+		scrollBeforeCapture: false,
+		maxImageHeight: 16_000,
+	};
+	// A status bar double: compose puts a marker in front of the png and sizes the result by quality
+	const fakeBar = ({reserveCss = 47, bytes = () => 20} = {}) => {
+		const calls = [];
+		return {
+			calls,
+			reserveCss,
+			async compose(png, settings) {
+				calls.push({png, ...settings});
+				return Buffer.concat([Buffer.from('BAR'), Buffer.alloc(bytes(settings))]);
+			},
+		};
+	};
+
+	const scrollPage = ({height, dpr = 1, bytes}) => {
+		const shots = [];
+		return {
+			shots,
+			async evaluate(fn) {
+				if (String(fn).includes('scrollTo')) {
+					return undefined;
+				}
+
+				return {
+					height, width: 1000, viewportHeight: 700, deviceScaleFactor: dpr,
+				};
+			},
+			async screenshot(options) {
+				shots.push(options);
+				return Buffer.from(typeof bytes === 'function' ? Array.from({length: bytes(options)}, () => 7) : 'PNGDATA');
+			},
+			waitForLoadState: async () => undefined,
+		};
+	};
+
+	it('composites the bar into a viewport capture, taken as a lossless png, and writes the result', async () => {
+		const page = scrollPage({height: 700});
+		const bar = fakeBar();
+		const files = await takeScreenshot(page, {...base, fullPage: false, statusBar: bar});
+		expect(page.shots).toEqual([{type: 'png', fullPage: false}]);
+		expect(bar.calls).toHaveLength(1);
+		expect(bar.calls[0]).toMatchObject({type: 'jpeg', quality: 80});
+		expect(bar.calls[0].png.toString()).toBe('PNGDATA');
+		expect(fs.readFileSync(files[0]).subarray(0, 3).toString()).toBe('BAR');
+	});
+
+	it('composites into a full page that fits one image', async () => {
+		const page = scrollPage({height: 3000});
+		const bar = fakeBar();
+		const files = await takeScreenshot(page, {...base, statusBar: bar});
+		expect(files).toEqual([pathFor('')]);
+		expect(page.shots).toEqual([{type: 'png', fullPage: true}]);
+		expect(bar.calls).toHaveLength(1);
+	});
+
+	it('steps the JPEG quality down after the compositing, from the one capture', async () => {
+		const page = scrollPage({height: 3000});
+		const bar = fakeBar({bytes: ({quality}) => (quality > 60 ? 5 * 1024 * 1024 : 100)});
+		const files = await takeScreenshot(page, {...base, statusBar: bar});
+		expect(bar.calls.map(call => call.quality)).toEqual([80, 70, 60]);
+		// The capture itself was taken once, not once per quality
+		expect(page.shots).toHaveLength(1);
+		expect(fs.readFileSync(files[0]).length).toBe(103);
+	});
+
+	it('encodes a png with the same type and no quality', async () => {
+		const page = scrollPage({height: 3000});
+		const bar = fakeBar();
+		await takeScreenshot(page, {
+			...base,
+			type: 'png',
+			pathFor: part => path.join(directory, `shot${part}.png`),
+			statusBar: bar,
+		});
+		expect(bar.calls).toHaveLength(1);
+		expect(bar.calls[0]).toMatchObject({type: 'png', quality: undefined});
+	});
+
+	it('puts the bar on the first part only and makes the first part leave room for it', async () => {
+		const page = scrollPage({height: 20_276, dpr: 1, bytes: () => 10});
+		const bar = fakeBar();
+		const files = await takeScreenshot(page, {...base, statusBar: bar});
+		expect(files).toEqual([pathFor('-part1'), pathFor('-part2')]);
+		expect(bar.calls).toHaveLength(1);
+		expect(page.shots.map(shot => shot.clip.height)).toEqual([15_953, 4323]);
+		// The first slice was a png for the bar, the second a jpeg as usual
+		expect(page.shots[0]).toMatchObject({type: 'png', fullPage: true});
+		expect(page.shots[1]).toMatchObject({type: 'jpeg', quality: 80});
+		expect(fs.readFileSync(files[0]).subarray(0, 3).toString()).toBe('BAR');
+		expect(fs.readFileSync(files[1]).subarray(0, 3).toString()).not.toBe('BAR');
+	});
+
+	it('does not shorten anything for a bar that takes no room (overlay)', async () => {
+		const page = scrollPage({height: 20_276, bytes: () => 10});
+		const bar = fakeBar({reserveCss: 0});
+		await takeScreenshot(page, {...base, statusBar: bar});
+		expect(page.shots.map(shot => shot.clip.height)).toEqual([16_000, 4276]);
+		expect(bar.calls).toHaveLength(1);
+	});
+
+	it('works with the grow-viewport strategy: the bar is on the first clip only', async () => {
+		const page = growablePage({content: () => 20_276});
+		const bar = fakeBar();
+		const files = await takeScreenshot(page, {
+			...base,
+			strategy: 'grow-viewport',
+			grow: noWait,
+			statusBar: bar,
+		});
+		expect(files).toHaveLength(2);
+		expect(page.state.shots.map(shot => shot.clip.height)).toEqual([15_953, 4323]);
+		expect(page.state.shots[0]).toMatchObject({type: 'png', fullPage: false});
+		expect(bar.calls).toHaveLength(1);
+		expect(page.state.viewport).toEqual({width: 1000, height: 700});
+	});
+
+	it('is not needed: without a status bar nothing is composited and a jpeg is captured directly', async () => {
+		const page = scrollPage({height: 3000});
+		await takeScreenshot(page, base);
+		expect(page.shots).toEqual([{type: 'jpeg', quality: 80, fullPage: true}]);
+	});
+});
