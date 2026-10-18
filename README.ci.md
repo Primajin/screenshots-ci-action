@@ -28,7 +28,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
-| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
+| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes none of the scenario's comments (compared by its own tags, as other scenarios write to the PR at the same time). See below |
 | `fail-invalid-context-options` | invalid JSON, a value that is not an object, an unknown key and wrong types fail with a message that names the problem, and nothing is captured |
 | `fail-invalid-size` | a malformed entry, a width or height out of 1 to 10000, a scale of 0 or above 5 and a device name in `sizes` fail with a message that names every invalid entry and shows `WIDTHxHEIGHT[@SCALE][:mobile]`, and nothing is captured |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
@@ -50,6 +50,13 @@ writes a table (file, format, dimensions, size) to the job summary.
 2. Add a job `pass-<name>` to `ci.yml` (same `if:` and `permissions:` as its
    neighbours) and list it under `needs:` of `all-green`.
 3. Add a row to the table above.
+4. A scenario that posts to the pull request or uploads to the CI release runs
+   **at the same time** as the others (they are separate jobs). Give it comment
+   tags of its own, assert per tag (`assert-pr-comment.mjs` always does), and never
+   compare or count all comments of the PR or the assets of the release: the
+   others change them while you look. Compare what is yours (the comments with
+   your tags, the assets with the timestamp of your call), and use `>=` on a time
+   window for assets.
 
 ## Run the action on your machine
 

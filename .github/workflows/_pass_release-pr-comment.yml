@@ -8,6 +8,10 @@ permissions:
   pull-requests: write
 
 env:
+  # The comment tags this scenario uses. Other scenarios post to the same pull
+  # request at the same time (each with tags of its own), so what must stay
+  # untouched is compared for these tags only, never for all comments of the PR.
+  OWN_TAGS: 'screenshots tall links silent'
   # Id of the long-lived CI pre-release that collects the screenshots of this
   # scenario (see README.ci.md for how to recreate it).
   CI_RELEASE_ID: '415059795'
@@ -181,7 +185,12 @@ jobs:
       - name: Remember the comments and when the silent capture started
         run: |
           set -euo pipefail
-          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments-before.jsonl"
+          # Only the comments of this scenario's own tags (the same filter before and after)
+          own=''
+          for tag in $OWN_TAGS; do
+            own="$own startswith(\"<!-- screenshots-ci-action:$tag -->\") or"
+          done
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq ".[] | select(.body | $own false) | {id, login: .user.login, body} | tojson" > "$RUNNER_TEMP/comments-before.jsonl"
           rm -rf screenshots
           echo "SINCE=$(date -u -d '1 minute ago' +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
       - name: Take a screenshot with comment false
@@ -200,14 +209,18 @@ jobs:
       - name: Assert that nothing was posted or edited
         run: |
           set -euo pipefail
-          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments-after.jsonl"
+          own=''
+          for tag in $OWN_TAGS; do
+            own="$own startswith(\"<!-- screenshots-ci-action:$tag -->\") or"
+          done
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq ".[] | select(.body | $own false) | {id, login: .user.login, body} | tojson" > "$RUNNER_TEMP/comments-after.jsonl"
           node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments-after.jsonl" \
             --title "PR comment (silent)" --tag silent --expect-comments 0
           if ! cmp -s "$RUNNER_TEMP/comments-before.jsonl" "$RUNNER_TEMP/comments-after.jsonl"; then
-            echo "::error::comment: false changed the comments of the pull request"
+            echo "::error::comment: false changed the comments of this scenario on the pull request"
             exit 1
           fi
-          echo "- comment: false uploaded the screenshots and left the $(wc -l < "$RUNNER_TEMP/comments-after.jsonl") comments of the pull request untouched" >> "$GITHUB_STEP_SUMMARY"
+          echo "- comment: false uploaded the screenshots and left the $(wc -l < "$RUNNER_TEMP/comments-after.jsonl") comments of this scenario untouched" >> "$GITHUB_STEP_SUMMARY"
       - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v7
