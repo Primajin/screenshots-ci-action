@@ -118,7 +118,7 @@ by running both. Changes that can break an existing workflow are listed in
 | `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
 | Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
 | Running on your machine | The `screenshots/` directory was only created when `GITHUB_WORKSPACE` was set (otherwise `ENOENT`), and without `GITHUB_REPOSITORY` the run failed after the capture. | Creates the directory and skips the GitHub steps. | [README.ci.md](README.ci.md#run-the-action-on-your-machine) |
-| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 22 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
+| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 23 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
 
 ## Inputs
 
@@ -559,6 +559,89 @@ Calls with the **same** tag must not run in parallel (two jobs of a matrix, or t
 pushes in a row without a `concurrency` group): both can see no comment yet and
 each creates one. Give parallel jobs different tags, or use a `concurrency`
 group per pull request.
+
+**Several calls, one comment: sections.** With `comment-section` the calls
+share the comment of one `comment-tag` instead of each owning one. The comment
+holds **one section per name**; a call replaces only its own section and leaves
+the others exactly as they were, so three looks of one page (light, dark,
+mobile) end up in a single comment:
+
+```yaml
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    no-desktop: true
+    sizes: 1440x900
+    context-options: '{"colorScheme": "light"}'
+    release-id: 63601424
+    comment-tag: showcase
+    comment-headline: Component showcase
+    comment-section: Desktop · light theme
+    comment-open: first
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    no-desktop: true
+    sizes: 1440x900
+    context-options: '{"colorScheme": "dark"}'
+    release-id: 63601424
+    comment-tag: showcase
+    comment-headline: Component showcase
+    comment-section: Desktop · dark theme
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+- **What a section is.** The captures of the call as **one** `<details>` group
+  titled with the section name (`comment-group-by` has no effect, it is warned
+  about; `comment-layout` `inline` and `links` work). Around it two hidden marker
+  lines, `<!-- screenshots-ci-action:<tag>:section:<slug> -->` and
+  `<!-- /screenshots-ci-action:<tag>:section:<slug> -->`, tell the next call where
+  the section is. The `<slug>` is the name in lower case with every run of other
+  characters than letters and digits (of any language) turned into one dash, so
+  `Desktop · light theme` is `desktop-light-theme` and `Desktop - Light theme` is
+  the same section. The name is cut to 80 characters and the slug to 60, so two
+  names that share their first 60 slug characters are **one** section. A name
+  without a single letter or digit (`!!!`) **fails the run** before anything is
+  captured: ignoring it would make the call own the whole comment and wipe the
+  other sections.
+- **Order and replacing.** A new section goes **after** the existing ones, a
+  repeated call replaces its own section **where it is**: the order is the order of
+  first insertion, not of the latest run. Everything of the other sections is
+  left byte for byte as it was, including their image links.
+- **The frame is shared.** The headline and the footer are those of the **latest
+  call**; give the calls the same `comment-headline` and `comment-footer`.
+  Anything in the earlier comment outside the sections is not kept. A comment
+  that was posted without sections (the tag was used before) is replaced by the
+  first call that has a section.
+- **`comment-open`** counts within the call's own group, so `first` and `all`
+  both open the section of that call. To open only one section of the
+  comment, set `comment-open: first` on one call only.
+- **Length.** Every call checks the merged comment against GitHub's limit
+  (65,000 characters used here). If it is too long, **only this section**
+  degrades: to links, then to a shortened list, then to a one line note; the
+  other sections and their markers are never cut. If the other sections leave no
+  room even for the note, nothing is posted (GitHub would answer 422): the run
+  shows a `Comment is full` warning annotation that names the section ("shorten
+  the other sections or use a different comment-tag"), the images are still
+  uploaded to the release, and the step stays green.
+- **`comment-mode: new`** cannot merge into an earlier comment: the section is
+  ignored with a warning and a whole new comment is posted. That comment starts
+  with the same tag marker line, so a later call with `comment-mode: update` finds
+  the **newest** comment of the tag, that one, merges its section into it and
+  drops what is not in a section.
+- **Edited by hand.** The markers must stay as they are. A section whose end
+  marker is missing is dropped, and when a slug appears twice (a copied section)
+  the first is kept and the second disappears with the next call.
+- **Limits.** Calls with the same tag must run **one after the other** (several
+  steps of one job are safe). The merge reads the comment and writes it back, so
+  **parallel calls (jobs of a matrix, two jobs)** can lose each other's updates:
+  both read the same comment and the second write wins. Use a `concurrency`
+  group per pull request, or one tag per job. Nothing removes a section: a
+  variant that you drop from the workflow **stays in the comment as a stale
+  section** until the comment is deleted (the next call creates it again).
 
 **Not posting.** `comment: false` still uploads the screenshots to the release
 (when `release-id` is set) and logs their URLs, but posts nothing; the files in
