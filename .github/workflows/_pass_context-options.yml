@@ -1,0 +1,106 @@
+name: "Positive Test - context options"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - context-options set the colour scheme, reduced motion, scale factor, viewport and touch of every capture"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      # 1. Dark, reduced motion, scale factor 2 and a viewport: one desktop size
+      #    instead of seven, and the same options on a device
+      - name: Capture the scheme page with dark, reduced motion, scale factor 2 and an 800x600 viewport
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=scheme
+          devices: iPhone 13
+          type: png
+          context-options: '{"colorScheme": "dark", "reducedMotion": "reduce", "deviceScaleFactor": 2, "viewport": {"width": 800, "height": 600}}'
+      - name: Assert one desktop image of 1600x1200 with the dark, reduced motion and mouse colours
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "context-options, desktop" --archive-to artifacts/desktop-dark --match 'desktopPage*' --expect-count 1 --expect 'desktopPage800x600-*=1600x1200' --type png --with-hash --color '0088ff@0,960,240,240:0.99' --color 'ff00ff@240,960,240,240:0.99' --color '888888@480,960,240,240:0.99' --color 'ff8800@0,960,240,240:0-0.01'
+      - name: Assert the device has the same scale factor and viewport, the colours and touch
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "context-options, device" --archive-to artifacts/device-dark --match 'iPhone_13-*' --expect-count 1 --expect 'iPhone_13-*=1600x1200' --type png --color '0088ff@0,960,240,240:0.99' --color 'ff00ff@240,960,240,240:0.99' --color 'ffee00@480,960,240,240:0.99'
+      - name: Assert there is nothing else, no other desktop size
+        run: node .github/scripts/assert-screenshots.mjs --expect-count 2 --expect-absent 'desktopPage540x405*' --expect-absent 'desktopPage1920x1080*'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 2. Control: without context-options nothing changes (7 sizes, light, no
+      #    reduced motion, mouse), so the colours of 1. come from the input
+      - name: Capture the scheme page without context-options
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=scheme
+          type: png
+      - name: Assert 7 desktop sizes and the light, no reduced motion and mouse colours
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "no context-options (control)" --archive-to artifacts/default --expect-count 7 --expect-from-name 'desktopPage*' --type png
+          node .github/scripts/assert-screenshots.mjs --match 'desktopPage1280x720-*' --expect-count 1 --expect 'desktopPage1280x720-*=1280x720' --color 'ff8800@0,600,120,120:0.99' --color '00cc00@120,600,120,120:0.99' --color '888888@240,600,120,120:0.99' --color '0088ff@0,600,120,120:0-0.01'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 3. The mobile variant of a design review: a desktop context that is
+      #    mobile, with touch, at 390x844 and scale factor 1
+      - name: Capture a 390x844 mobile context with scale factor 1
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=scheme
+          type: png
+          context-options: '{"colorScheme": "dark", "reducedMotion": "reduce", "deviceScaleFactor": 1, "isMobile": true, "hasTouch": true, "viewport": {"width": 390, "height": 844}}'
+      - name: Assert the one 390x844 image with the dark, reduced motion and touch colours
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "context-options, mobile" --archive-to artifacts/mobile --expect-count 1 --expect 'desktopPage390x844-*=390x844' --type png --color '0088ff@0,724,120,120:0.99' --color 'ff00ff@120,724,120,120:0.99' --color 'ffee00@240,724,120,120:0.99'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 4. The session of a pre-script is not overridden by context-options
+      - name: Serve the login fixture
+        run: |
+          rm -f _login-requests.log
+          nohup node .github/smoke-fixtures/login-server.js "$GITHUB_WORKSPACE/_login-requests.log" >/dev/null 2>&1 &
+          for _ in $(seq 1 40); do
+            curl -sf http://localhost:8081/login >/dev/null && break
+            sleep 0.25
+          done
+          curl -sf http://localhost:8081/login >/dev/null
+          # The readiness probes are not part of the assertion.
+          rm -f _login-requests.log
+      - name: Capture behind a login with context-options
+        uses: ./
+        with:
+          url: http://localhost:8081/
+          no-desktop: true
+          devices: iPhone 13
+          type: png
+          pre-script-path: .github/smoke-fixtures/pre.mjs
+          context-options: '{"colorScheme": "dark", "deviceScaleFactor": 2}'
+      - name: Assert the device image has the scale factor of the options
+        run: node .github/scripts/assert-screenshots.mjs --title "context-options with a pre-script" --archive-to artifacts/pre-script --expect-count 1 --expect 'iPhone_13-*=780x1328' --type png
+      - name: Assert the session cookie reached the capture, none was anonymous
+        run: |
+          test -f _login-requests.log || { echo '::error::No server log'; exit 1; }
+          cat _login-requests.log
+          authed=$(grep -c '^GET / cookie=\[.*session=1.*\]$' _login-requests.log || true)
+          anon=$(grep -c '^GET / cookie=\[\]$' _login-requests.log || true)
+          echo "authenticated GET / requests: $authed, anonymous: $anon"
+          [ "$authed" -ge 2 ] || { echo '::error::Expected at least 2 authenticated requests'; exit 1; }
+          [ "$anon" -eq 0 ] || { echo '::error::A capture ran without the session cookie'; exit 1; }
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-context-options
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,0 +1,54 @@
+name: "Negative Test - invalid context options"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    name: "Should fail - invalid JSON, an unknown key or a wrong type fails the action before any capture"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Use an unknown key
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          url: https://example.com
+          context-options: '{"colorscheme": "dark"}'
+      - name: Check the step failed
+        if: always()
+        run: |
+          if [ "${{ steps.action.outcome }}" == "failure" ]; then
+            echo "The action failed as expected"
+          else
+            echo "::error::The action did not fail"
+            exit 1
+          fi
+      - name: Check every kind of mistake fails with a clear message and captures nothing
+        shell: bash
+        env:
+          INPUT_URL: https://example.com
+        run: |
+          check() {
+            local options="$1" message="$2"
+            if env "INPUT_CONTEXT-OPTIONS=$options" node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+              cat action.log
+              echo "::error::Expected a non-zero exit code for $options"
+              exit 1
+            fi
+            cat action.log
+            grep -qF -- "$message" action.log || { echo "::error::The message for $options should contain: $message"; exit 1; }
+          }
+          check '{colorScheme: dark}' 'context-options is not valid JSON'
+          check '["dark"]' 'context-options must be a JSON object'
+          check '{"colorscheme": "dark"}' 'unknown option "colorscheme"'
+          check '{"colorScheme": "darkish"}' '"colorScheme" must be one of'
+          check '{"deviceScaleFactor": "2"}' '"deviceScaleFactor" must be a number above 0'
+          check '{"viewport": {"width": 0, "height": 900}}' '"viewport" must be an object'
+          check '{"storageState": "x"}' 'unknown option "storageState"'
+          test -z "$(ls screenshots 2>/dev/null)"

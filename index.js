@@ -12,7 +12,7 @@ import {buildCommentBody, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
-import {ensureScreenshotsDir, listScreenshots} from './screenshots-dir.js';
+import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
 import {
 	buildContextOptions,
 	buildSelectorWaitOptions,
@@ -20,6 +20,8 @@ import {
 	formatInvalidDevicesError,
 	mapWaitUntil,
 	normalizeScreenshotType,
+	resolveContextOptions,
+	resolveDesktopViewports,
 	resolveDevices,
 } from './utils.js';
 
@@ -46,6 +48,10 @@ const POST_FIX = process.env.GITHUB_SHA
 const DEFAULT_WAIT_FOR_SELECTOR = '';
 
 let browser;
+
+// The files THIS call wrote. The directory is shared by every call of the action in
+// a job, so uploading, commenting and Telegram only look at these.
+const runFiles = createRunFiles(PATH);
 
 // Wait for the configured selector. A timeout must not break the flow, so the
 // error is logged and the screenshot is taken anyway (unchanged behaviour).
@@ -109,6 +115,10 @@ async function run() {
 			timeout: core.getInput('wait-for-selector-timeout'),
 		});
 
+		// Playwright context options for every capture; an invalid value fails the
+		// run here, before a browser is started
+		const contextOverrides = resolveContextOptions(core.getInput('context-options'));
+
 		// How the PR comment looks and where it goes (see "PR comments" in the README)
 		const {options: commentOptions, warnings: commentWarnings} = resolveCommentOptions(core.getInput);
 		for (const message of commentWarnings) {
@@ -127,6 +137,7 @@ async function run() {
 			waitUntil,
 			waitForSelector,
 			waitForSelectorOptions,
+			contextOptions: contextOverrides,
 			comment: commentOptions,
 		});
 		core.endGroup(); // Action config
@@ -197,10 +208,18 @@ async function run() {
 			core.startGroup('start process desktop');
 			console.log('Processing desktop screenshot');
 
+			// The 7 fixed sizes, or only the viewport of the context-options
+			const desktopSizes = resolveDesktopViewports(DEFAULT_DESKTOP_VIEWPOINT_RATIO, contextOverrides);
+			if (contextOverrides.viewport) {
+				const {width, height} = contextOverrides.viewport;
+				console.log(`context-options sets a viewport: capturing only ${width}x${height} instead of the ${DEFAULT_DESKTOP_VIEWPOINT_RATIO.length} desktop sizes.`);
+			}
+
 			const desktopContext = await browser.newContext(
 				buildContextOptions(
-					{viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0]},
+					{viewport: desktopSizes[0]},
 					storageState,
+					contextOverrides,
 				),
 			);
 			const desktopPage = await desktopContext.newPage();
@@ -213,7 +232,7 @@ async function run() {
 				waitForSelectorOptions,
 			);
 
-			for (const {width, height} of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
+			for (const {width, height} of desktopSizes) {
 				// Filename with/without post fix commit hash name; a very tall page is
 				// split into -part1, -part2, ... inserted before that suffix
 				const desktopPath = part =>
@@ -222,7 +241,7 @@ async function run() {
 						: `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
 
 				await desktopPage.setViewportSize({width, height});
-				await takeScreenshot(desktopPage, {
+				runFiles.add(await takeScreenshot(desktopPage, {
 					pathFor: desktopPath,
 					maxImageHeight,
 					fullPage: isFullPage,
@@ -230,7 +249,7 @@ async function run() {
 					scrollBeforeCapture: isScrollBeforeCapture,
 					waitUntil,
 					log: console.log,
-				});
+				}));
 			}
 
 			await desktopContext.close();
@@ -252,9 +271,10 @@ async function run() {
 						: `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
 
 				// Every device gets its own context built from Playwright's descriptor
-				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
+				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch); the
+				// context-options win over it.
 				const context = await browser.newContext(
-					buildContextOptions(devices[deviceName], storageState),
+					buildContextOptions(devices[deviceName], storageState, contextOverrides),
 				);
 				const page = await context.newPage();
 
@@ -266,7 +286,7 @@ async function run() {
 					waitForSelectorOptions,
 				);
 
-				await takeScreenshot(page, {
+				runFiles.add(await takeScreenshot(page, {
 					pathFor: mobilePath,
 					maxImageHeight,
 					fullPage: isFullPage,
@@ -274,7 +294,7 @@ async function run() {
 					scrollBeforeCapture: isScrollBeforeCapture,
 					waitUntil,
 					log: console.log,
-				});
+				}));
 				await context.close();
 			}
 
@@ -284,7 +304,7 @@ async function run() {
 		await browser.close();
 
 		// 6. Run screenshot post task
-		await postProcesses(commentOptions);
+		await postProcesses(commentOptions, runFiles.names());
 	} catch (error) {
 		console.error(error);
 		core.setFailed(error.message);
@@ -392,10 +412,10 @@ async function uploadAndCommentImages(files, commentOptions) {
 	}
 }
 
-async function postProcesses(commentOptions) {
-	const files = await listScreenshots(PATH);
+// `files` are the names this call wrote, not everything in the directory
+async function postProcesses(commentOptions, files) {
 	if (files.length === 0) {
-		console.warn(`No screenshots were found in ${PATH}; nothing to send or post.`);
+		console.warn(`No screenshots were written to ${PATH}; nothing to send or post.`);
 		return;
 	}
 

@@ -8,7 +8,7 @@ import {
 	expect,
 	it,
 } from 'vitest';
-import {ensureScreenshotsDir, listScreenshots} from './screenshots-dir.js';
+import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
 
 let root;
 
@@ -31,35 +31,51 @@ describe('ensureScreenshotsDir', () => {
 	it('works for a path with a trailing slash, like the action uses', async () => {
 		const directory = `${path.join(root, 'screenshots')}/`;
 		await ensureScreenshotsDir(directory);
-		expect(await listScreenshots(directory)).toEqual([]);
+		expect(await fs.readdir(directory)).toEqual([]);
 	});
 
 	it('keeps what is in an existing directory', async () => {
 		await fs.writeFile(path.join(root, 'a.png'), 'x');
 		await ensureScreenshotsDir(root);
-		expect(await listScreenshots(root)).toEqual(['a.png']);
+		expect(await fs.readdir(root)).toEqual(['a.png']);
 	});
 });
 
-describe('listScreenshots', () => {
-	it('lists the files', async () => {
-		await fs.writeFile(path.join(root, 'b.png'), 'x');
-		await fs.writeFile(path.join(root, 'a.png'), 'x');
-		const names = await listScreenshots(root);
-		expect(names.toSorted((x, y) => x.localeCompare(y))).toEqual(['a.png', 'b.png']);
+describe('createRunFiles', () => {
+	it('starts empty', () => {
+		expect(createRunFiles(root).names()).toEqual([]);
 	});
 
-	it('answers an empty list for an empty directory', async () => {
-		expect(await listScreenshots(root)).toEqual([]);
+	it('answers the written files as names relative to the directory, in the order written', () => {
+		const files = createRunFiles(root);
+		files.add([path.join(root, 'b.jpeg'), path.join(root, 'a-part1.jpeg')]);
+		files.add([path.join(root, 'a-part2.jpeg')]);
+		expect(files.names()).toEqual(['b.jpeg', 'a-part1.jpeg', 'a-part2.jpeg']);
 	});
 
-	it('answers an empty list for a missing directory instead of throwing', async () => {
-		expect(await listScreenshots(path.join(root, 'missing'))).toEqual([]);
+	it('lists a file once, even when it is written again', () => {
+		const files = createRunFiles(root);
+		files.add([path.join(root, 'a.png')]);
+		files.add([path.join(root, 'a.png')]);
+		expect(files.names()).toEqual(['a.png']);
 	});
 
-	it('still throws for other errors, like a file where the directory should be', async () => {
-		const file = path.join(root, 'file');
-		await fs.writeFile(file, 'x');
-		await expect(listScreenshots(file)).rejects.toThrow();
+	it('works for a directory with a trailing slash and for relative paths, like the action uses', () => {
+		const files = createRunFiles('screenshots/');
+		files.add(['screenshots/desktopPage540x405-abc1234.jpeg']);
+		expect(files.names()).toEqual(['desktopPage540x405-abc1234.jpeg']);
+	});
+
+	it('ignores files of the directory that this call did not write', async () => {
+		await fs.writeFile(path.join(root, 'earlier-call.jpeg'), 'x');
+		const files = createRunFiles(root);
+		files.add([path.join(root, 'mine.jpeg')]);
+		expect(files.names()).toEqual(['mine.jpeg']);
+	});
+
+	it('ignores paths outside of the directory and the directory itself', () => {
+		const files = createRunFiles(root);
+		files.add([path.join(root, '..', 'other.jpeg'), root, '/elsewhere/x.png']);
+		expect(files.names()).toEqual([]);
 	});
 });

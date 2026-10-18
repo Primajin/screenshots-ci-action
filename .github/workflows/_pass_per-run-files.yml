@@ -1,0 +1,87 @@
+name: "Positive Test - per-run files"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # The CI pre-release, see _pass_release-pr-comment.yml and README.ci.md
+  CI_RELEASE_ID: '415059795'
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - a second call in the same job uploads and comments only its own images"
+    # The comments of this scenario are edited in place, so runs for one PR queue up
+    concurrency:
+      group: per-run-files-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      - name: First call, an iPhone 13
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          devices: iPhone 13
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: per-run-first
+          comment-headline: First call
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Second call in the same job, an iPad Pro 11 landscape (the screenshots directory is not emptied)
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          devices: iPad Pro 11 landscape
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: per-run-second
+          comment-headline: Second call
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Assert the directory still holds the images of both calls
+        run: node .github/scripts/assert-screenshots.mjs --title "Per-run files, directory" --archive-to artifacts/per-run-files --expect-count 2 --expect 'iPhone_13-*=1170x1992' --expect 'iPad_Pro_11_landscape-*=2388x1668'
+      - name: Assert each comment contains only the images of its own call
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (first call)" --tag per-run-first --expect-comments 1 \
+            --images 1 --details-closed --contains='### First call' --contains='alt="iPhone 13"' \
+            --not-contains='iPad' --write-body "$RUNNER_TEMP/comment-first.md"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "PR comment (second call)" --tag per-run-second --expect-comments 1 \
+            --images 1 --details-closed --contains='### Second call' --contains='alt="iPad Pro 11 landscape"' \
+            --not-contains='iPhone' --write-body "$RUNNER_TEMP/comment-second.md"
+      - name: Assert the second call uploaded one release asset, not two
+        run: |
+          set -euo pipefail
+          # All assets of one call share the timestamp that starts their name
+          for which in first second; do
+            ts=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9.]+Z' "$RUNNER_TEMP/comment-$which.md" | head -1)
+            [ -n "$ts" ] || { echo "::error::No upload timestamp in the $which comment"; exit 1; }
+            count=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.name | startswith(\"$ts-\")) | .name" | grep -c . || true)
+            echo "$which call: timestamp $ts, $count asset(s)"
+            [ "$count" -eq 1 ] || { echo "::error::Expected 1 release asset for the $which call, found $count"; exit 1; }
+          done
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-per-run-files
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn
