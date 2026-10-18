@@ -108,6 +108,10 @@ inputs:
     required: false
     description: "Identifies the comment for comment-mode update, through a hidden marker line. Use a different tag for every call of this action on the same pull request (calls must not run in parallel with the same tag). Default 'screenshots'."
     default: 'screenshots'
+  comment-section:
+    required: false
+    description: "Name of this call's section, to let several calls share ONE comment (the one of comment-tag): the comment holds one section per name, and a call replaces only its own section and leaves the others as they are. The section is one group titled with the name; the headline and footer are shared (the latest call wins). Empty (default): this call owns the whole comment. Needs comment-mode update. Calls must run one after the other: parallel calls can lose updates. See README, PR comments."
+    default: ''
   comment-headline:
     required: false
     description: "Headline of the comment. Default 'Screenshots'."
@@ -176,5 +180,6 @@ runs:
         INPUT_COMMENT-IMAGE-HEIGHT: ${{ inputs.comment-image-height }}
         INPUT_COMMENT-MODE: ${{ inputs.comment-mode }}
         INPUT_COMMENT-TAG: ${{ inputs.comment-tag }}
+        INPUT_COMMENT-SECTION: ${{ inputs.comment-section }}
         INPUT_COMMENT-HEADLINE: ${{ inputs.comment-headline }}
         INPUT_COMMENT-FOOTER: ${{ inputs.comment-footer }}

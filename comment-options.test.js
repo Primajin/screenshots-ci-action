@@ -1,5 +1,10 @@
 import {describe, expect, it} from 'vitest';
-import {DEFAULT_COMMENT_OPTIONS, resolveCommentOptions, sanitizeTag} from './comment-options.js';
+import {
+	DEFAULT_COMMENT_OPTIONS,
+	resolveCommentOptions,
+	sanitizeTag,
+	slugifySectionName,
+} from './comment-options.js';
 
 const resolve = (inputs = {}) => resolveCommentOptions(name => inputs[name] ?? '');
 
@@ -137,5 +142,93 @@ describe('sanitizeTag', () => {
 		expect(sanitizeTag('x --> <script>')).not.toMatch(/[<>]/v);
 		expect(sanitizeTag('a-->b')).toBe('a---b');
 		expect(sanitizeTag('--!>')).toBe('----');
+	});
+});
+
+describe('comment-section', () => {
+	it('is no section by default', () => {
+		expect(resolve().options.section).toBeNull();
+		expect(resolve({'comment-section': '  '}).options.section).toBeNull();
+		expect(DEFAULT_COMMENT_OPTIONS.section).toBeNull();
+	});
+
+	it('is the trimmed name and the slug that identifies the section', () => {
+		const {options, warnings} = resolve({'comment-section': '  Desktop · light theme '});
+		expect(options.section).toEqual({name: 'Desktop · light theme', slug: 'desktop-light-theme'});
+		expect(warnings).toEqual([]);
+	});
+
+	it('collapses whitespace and removes control characters from the name', () => {
+		const {options} = resolve({'comment-section': 'Mobile\n\t  dark\u{0}theme'});
+		expect(options.section.name).toBe('Mobile dark theme');
+		expect(options.section.slug).toBe('mobile-dark-theme');
+	});
+
+	it('keeps the name as written, so the title can be anything', () => {
+		const {options} = resolve({'comment-section': '<b>Mobile</b> & "co"'});
+		expect(options.section).toEqual({name: '<b>Mobile</b> & "co"', slug: 'b-mobile-b-co'});
+	});
+
+	it('cuts a long name with a warning', () => {
+		const {options, warnings} = resolve({'comment-section': 'x'.repeat(100)});
+		expect(options.section.name).toBe('x'.repeat(80));
+		expect(warnings).toHaveLength(1);
+		expect(warnings[0]).toContain('longer than 80 characters');
+	});
+
+	it('fails for a name without letters or digits instead of owning the whole comment', () => {
+		for (const name of ['!!!', ' --- ··· ', '***', '_']) {
+			const attempt = () => resolve({'comment-section': name});
+			expect(attempt, name).toThrow(`The comment-section "${name.trim()}" has no letters or digits to identify the section by`);
+			expect(attempt, name).toThrow('leave comment-section empty for a comment of its own');
+		}
+	});
+
+	it('ignores the section with comment-mode new, with a warning', () => {
+		const {options, warnings} = resolve({'comment-section': 'Desktop', 'comment-mode': 'new'});
+		expect(options.section).toBeNull();
+		expect(options.mode).toBe('new');
+		expect(warnings).toEqual([
+			'comment-section "Desktop" is ignored with comment-mode new: a section is merged into the comment this action posted earlier (comment-mode update). Posting a whole new comment.',
+		]);
+	});
+
+	it('warns that comment-group-by has no effect on a section', () => {
+		for (const groupBy of ['all', 'none']) {
+			const {options, warnings} = resolve({'comment-section': 'Desktop', 'comment-group-by': groupBy});
+			expect(options.section).toEqual({name: 'Desktop', slug: 'desktop'});
+			expect(warnings).toEqual([`comment-group-by "${groupBy}" is ignored with comment-section: the captures of a call are always one section.`]);
+		}
+
+		expect(resolve({'comment-section': 'Desktop', 'comment-group-by': 'capture'}).warnings).toEqual([]);
+	});
+
+	it('does not warn about comment-group-by without a section', () => {
+		expect(resolve({'comment-group-by': 'all'}).warnings).toEqual([]);
+	});
+});
+
+describe('slugifySectionName', () => {
+	it('lower cases and joins words with single dashes', () => {
+		expect(slugifySectionName('Desktop · Light Theme')).toBe('desktop-light-theme');
+		expect(slugifySectionName('  a   b--c__d ')).toBe('a-b-c-d');
+	});
+
+	it('keeps letters and digits of any language', () => {
+		expect(slugifySectionName('Übersicht 日本語 ٣')).toBe('übersicht-日本語-٣');
+	});
+
+	it('maps names that differ only in case, spacing or punctuation to one slug', () => {
+		expect(slugifySectionName('Mobile - dark')).toBe(slugifySectionName('mobile dark'));
+	});
+
+	it('is safe inside a hidden html comment', () => {
+		expect(slugifySectionName('x --> <script>')).toBe('x-script');
+	});
+
+	it('is empty without letters or digits and never ends with a dash after cutting', () => {
+		expect(slugifySectionName('!!!')).toBe('');
+		const slug = slugifySectionName(`${'a'.repeat(59)} b`);
+		expect(slug).toBe('a'.repeat(59));
 	});
 });

@@ -168,6 +168,7 @@ All inputs are optional except `url`. How switches are read differs a little:
 | `comment-image-height` | `auto-ratio` | `auto-ratio`: put `height` (from the aspect ratio) next to `width` on every image. `none`: put only the `width`. Use `none` if images look squashed in a narrow window, see [PR comments](#pr-comments). |
 | `comment-mode` | `update` | `update`: edit the comment this action posted earlier on the pull request (found by `comment-tag`), so a pull request keeps one comment that follows every push. `new`: always post a new comment. |
 | `comment-tag` | `screenshots` | Names the comment for `update` (a hidden `<!-- screenshots-ci-action:<tag> -->` first line). Use a different tag for every call of the action on the same pull request. |
+| `comment-section` | `''` | Let several calls share **one** comment (the one of `comment-tag`): the comment holds one section per name and this call replaces only its own, leaving the others as they are. The section is one group titled with the name; the headline and the footer are shared (the latest call wins). Empty: this call owns the whole comment. Needs `comment-mode: update` (ignored with a warning for `new`). Calls must run one after the other. See [PR comments](#pr-comments). |
 | `comment-headline` | `Screenshots` | Headline of the comment. |
 | `comment-footer` | `true` | A small footer with the commit and a link to the workflow run. `false`, `0`, `no` and `off` switch it off. |
 
