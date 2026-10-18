@@ -76,6 +76,10 @@ inputs:
     required: false
     description: "Maximum time in milliseconds the pre-script may run before the action fails. Defaults to 30000."
     default: '30000'
+  report-page-problems:
+    required: false
+    description: "When true, report what the page does wrong while it is captured: uncaught exceptions and console errors (from before the navigation on), and a wait-for-selector that timed out. They are shown as a warning block in the PR comment and as warning annotations of the run (the first 10). It never fails the run. Defaults to false."
+    default: false
   release-id:
     required: false
     description: "Id of an existing, published GitHub release (a pre-release is fine) that the screenshots are uploaded to as assets. Needed for the PR comment, see README.PR.md. Also needs the GITHUB_TOKEN env."
@@ -176,6 +180,7 @@ runs:
         INPUT_WAIT-FOR-SELECTOR-TIMEOUT: ${{ inputs.wait-for-selector-timeout }}
         PRE_SCRIPT_PATH: ${{ inputs.pre-script-path }}
         PRE_SCRIPT_TIMEOUT: ${{ inputs.pre-script-timeout }}
+        INPUT_REPORT-PAGE-PROBLEMS: ${{ inputs.report-page-problems }}
         INPUT_RELEASE-ID: ${{ inputs.release-id }}
         INPUT_COMMENT: ${{ inputs.comment }}
         INPUT_COMMENT-LAYOUT: ${{ inputs.comment-layout }}
