@@ -20,6 +20,8 @@ import {
 	formatInvalidDevicesError,
 	mapWaitUntil,
 	normalizeScreenshotType,
+	resolveContextOptions,
+	resolveDesktopViewports,
 	resolveDevices,
 } from './utils.js';
 
@@ -113,6 +115,10 @@ async function run() {
 			timeout: core.getInput('wait-for-selector-timeout'),
 		});
 
+		// Playwright context options for every capture; an invalid value fails the
+		// run here, before a browser is started
+		const contextOverrides = resolveContextOptions(core.getInput('context-options'));
+
 		// How the PR comment looks and where it goes (see "PR comments" in the README)
 		const {options: commentOptions, warnings: commentWarnings} = resolveCommentOptions(core.getInput);
 		for (const message of commentWarnings) {
@@ -131,6 +137,7 @@ async function run() {
 			waitUntil,
 			waitForSelector,
 			waitForSelectorOptions,
+			contextOptions: contextOverrides,
 			comment: commentOptions,
 		});
 		core.endGroup(); // Action config
@@ -201,10 +208,18 @@ async function run() {
 			core.startGroup('start process desktop');
 			console.log('Processing desktop screenshot');
 
+			// The 7 fixed sizes, or only the viewport of the context-options
+			const desktopSizes = resolveDesktopViewports(DEFAULT_DESKTOP_VIEWPOINT_RATIO, contextOverrides);
+			if (contextOverrides.viewport) {
+				const {width, height} = contextOverrides.viewport;
+				console.log(`context-options sets a viewport: capturing only ${width}x${height} instead of the ${DEFAULT_DESKTOP_VIEWPOINT_RATIO.length} desktop sizes.`);
+			}
+
 			const desktopContext = await browser.newContext(
 				buildContextOptions(
-					{viewport: DEFAULT_DESKTOP_VIEWPOINT_RATIO[0]},
+					{viewport: desktopSizes[0]},
 					storageState,
+					contextOverrides,
 				),
 			);
 			const desktopPage = await desktopContext.newPage();
@@ -217,7 +232,7 @@ async function run() {
 				waitForSelectorOptions,
 			);
 
-			for (const {width, height} of DEFAULT_DESKTOP_VIEWPOINT_RATIO) {
+			for (const {width, height} of desktopSizes) {
 				// Filename with/without post fix commit hash name; a very tall page is
 				// split into -part1, -part2, ... inserted before that suffix
 				const desktopPath = part =>
@@ -256,9 +271,10 @@ async function run() {
 						: `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
 
 				// Every device gets its own context built from Playwright's descriptor
-				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch).
+				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch); the
+				// context-options win over it.
 				const context = await browser.newContext(
-					buildContextOptions(devices[deviceName], storageState),
+					buildContextOptions(devices[deviceName], storageState, contextOverrides),
 				);
 				const page = await context.newPage();
 
