@@ -1,4 +1,5 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>Primajin/.github:release-please"]
+  "extends": ["local>Primajin/.github:release-please"],
+  "forkProcessing": "enabled"
 }
