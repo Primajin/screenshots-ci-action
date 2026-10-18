@@ -1,6 +1,6 @@
 // Acme Demo Shop helper: prints the measured viewport into the header band,
 // draws the 500px ruler, writes the footer marker and runs the page modes
-// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe). Text only, no dependencies.
+// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe, ?mode=problems). Text only, no dependencies.
 (function () {
   'use strict';
 
@@ -129,6 +129,18 @@
     refresh();
   }
 
+  // ?mode=problems: what report-page-problems reports. A console error (with a
+  // link, a mention and an issue reference in it, which must stay plain text in
+  // the comment) and an uncaught exception right when the page loads, and a
+  // console log that is not a problem.
+  function startProblemsMode() {
+    console.log('demo console log, not a problem');
+    console.error('demo console error: the cart could not be loaded, see [the log](https://example.com/log) @octocat #1');
+    setTimeout(function () {
+      throw new Error('demo page error: cart is undefined');
+    }, 0);
+  }
+
   function printTimings() {
     var panel = $('#timings');
     if (panel) {
@@ -181,5 +193,7 @@
     printTimings();
   } else if (mode === 'iframe') {
     startIframeMode();
+  } else if (mode === 'problems') {
+    startProblemsMode();
   }
 })();
