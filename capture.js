@@ -18,6 +18,14 @@ import {promises as fs} from 'node:fs';
 //   scroll-reveal content that was never scrolled into view; scrolling first
 //   fixes that.
 //
+// - full-page-strategy grow-viewport: instead of Chrome's own "full page" mode
+//   (which paints what lies beyond the viewport without ever bringing it on
+//   screen), the viewport is grown to the height of the page and the slices are
+//   captured with clip and fullPage false. Everything is then on screen at
+//   once, so a cross-origin iframe (a map embed) renders instead of coming out
+//   blank, and lazy / scroll-reveal content is triggered without scrolling.
+//   Approach of asfand-dev/aktion's capture-showcase.mjs (fitViewportToPage).
+//
 // Everything that does not need a browser is a pure function so it can be unit
 // tested.
 
@@ -32,6 +40,18 @@ const WARN_PART_COUNT = 200;
 const MAX_IMAGE_BYTES = 4.8 * 1024 * 1024;
 const PNG_WARN_BYTES = 5 * 1024 * 1024;
 const JPEG_QUALITY_STEPS = [80, 70, 60, 50, 40]; // Starts at Playwright's default
+
+// Full page strategies: how the page is brought entirely on screen
+const FULL_PAGE_STRATEGIES = ['scroll', 'grow-viewport'];
+const DEFAULT_FULL_PAGE_STRATEGY = 'scroll';
+// For grow-viewport: the passes until the page height is stable, the wait after
+// each resize, and the best-effort waits before the capture
+const GROW_MAX_PASSES = 5;
+const GROW_PASS_WAIT_MS = 500;
+const GROW_IDLE_TIMEOUT_MS = 5000;
+const GROW_SETTLE_MS = 1000;
+// A viewport this tall (CSS px) is the most that grow-viewport asks of Chromium
+const MAX_GROW_HEIGHT = 100_000;
 
 const DEFAULT_MAX_SCROLL_MS = 15_000;
 const DEFAULT_MAX_SCROLL_STEPS = 150;
@@ -48,6 +68,35 @@ const FALSE_VALUES = new Set(['false', '0', 'no', 'off']);
 // The scroll input is on by default: only these values switch it off.
 function isScrollEnabled(input) {
 	return !FALSE_VALUES.has(String(input ?? '').trim().toLowerCase());
+}
+
+/**
+ Resolve the full-page-strategy input. Empty means the default.
+ @param {string} [input] The full-page-strategy input as written.
+ @returns {'scroll' | 'grow-viewport'} The strategy to use, scroll when the input is empty.
+ @throws {Error} For any other value: a typo would silently give the capture the other strategy gets wrong, so the run fails instead.
+ */
+function resolveFullPageStrategy(input) {
+	const raw = String(input ?? '').trim().toLowerCase();
+	if (raw === '') {
+		return DEFAULT_FULL_PAGE_STRATEGY;
+	}
+
+	if (!FULL_PAGE_STRATEGIES.includes(raw)) {
+		throw new Error(`Unknown full-page-strategy "${String(input).trim()}"; use ${FULL_PAGE_STRATEGIES.join(' or ')}.`);
+	}
+
+	return raw;
+}
+
+/**
+ Limit the height grow-viewport asks for.
+ @param {number} height The measured height of the document in CSS px.
+ @param {number} [maxHeight] The most the viewport is grown to.
+ @returns {{height: number, capped: boolean}} The height to use and whether the page is taller than that.
+ */
+function capGrowHeight(height, maxHeight = MAX_GROW_HEIGHT) {
+	return height > maxHeight ? {height: maxHeight, capped: true} : {height, capped: false};
 }
 
 const sleep = ms => new Promise(resolve => {
@@ -234,6 +283,63 @@ async function prepareFullPage(page, options) {
 	log(`Scrolled through the page in ${steps} step(s) before the capture.`);
 }
 
+/**
+ Grow the viewport until it is as tall as the page: resize to the height of the
+ document, wait, measure again, and repeat (at most `passes` times) until the
+ height is stable, because a taller viewport can change the height itself
+ (anything sized in vh, content an IntersectionObserver reveals once it is on
+ screen). The width stays as it is. A page taller than `maxHeight` is not grown
+ beyond it. Then waits, as far as it can, for the network to be idle and for
+ media that only now started loading to arrive. The caller restores the
+ viewport (the original size is in the result).
+ @param {object} page A Playwright page.
+ @param {{maxHeight?: number, passes?: number, passWaitMs?: number, idleTimeoutMs?: number, settleMs?: number, sleep?: (ms: number) => Promise<void>, log?: (message: string) => void}} [options] Limits and waits (tests shorten them).
+ @returns {Promise<{original: {width: number, height: number} | null, width: number, height: number, capped: boolean, passes: number}>} The viewport before, and the size it was grown to.
+ */
+async function growViewport(page, options) {
+	const {
+		maxHeight = MAX_GROW_HEIGHT,
+		passes = GROW_MAX_PASSES,
+		passWaitMs = GROW_PASS_WAIT_MS,
+		idleTimeoutMs = GROW_IDLE_TIMEOUT_MS,
+		settleMs = GROW_SETTLE_MS,
+		sleep: wait = sleep,
+		log = () => {},
+	} = options || {};
+	const original = page.viewportSize();
+	let metrics = await measureDocument(page);
+	const width = original?.width ?? await page.evaluate(() => window.innerWidth);
+	let {height, capped} = capGrowHeight(metrics.height, maxHeight);
+	// The height of the viewport as it is, which is not the last measured one
+	let applied = height;
+	let used = 0;
+	/* eslint-disable no-await-in-loop -- every pass depends on the one before */
+	while (used < passes) {
+		used++;
+		await page.setViewportSize({width, height});
+		applied = height;
+		await wait(passWaitMs);
+		metrics = await measureDocument(page);
+		if (capped || metrics.height === height) {
+			break;
+		}
+
+		({height, capped} = capGrowHeight(metrics.height, maxHeight));
+	}
+
+	/* eslint-enable no-await-in-loop */
+	if (capped) {
+		log(`The page is taller than ${maxHeight} CSS px: the viewport was not grown beyond that, the rest of the page is not captured.`);
+	}
+
+	await page.waitForLoadState('networkidle', {timeout: idleTimeoutMs}).catch(() => {});
+	await wait(settleMs);
+	log(`Grew the viewport to ${width} x ${applied} CSS px in ${used} pass${used === 1 ? '' : 'es'} before the capture.`);
+	return {
+		original, width, height: applied, capped, passes: used,
+	};
+}
+
 // Capture one image with the size guards and write it to `file`. A JPEG above
 // the 4.8 MB limit is captured again at a lower quality, a PNG above 5 MB only
 // logs a warning. `capture(quality)` must resolve to a Buffer; `label` names the
@@ -257,75 +363,32 @@ async function writeImage(capture, {file, type, label, log}) {
 	return {buffer, quality};
 }
 
-// A capture that is one image: the viewport, or a full page that fits
-async function writeSingleImage(page, options, fullPage) {
+// A capture that is one image: the viewport, a full page that fits, or the
+// whole grown viewport (clip)
+async function writeSingleImage(page, options, screenshot) {
 	const {pathFor, type, log} = options;
 	const file = pathFor('');
-	const capture = quality => page.screenshot({type, quality, fullPage});
+	const capture = quality => page.screenshot({type, quality, ...screenshot});
 	await writeImage(capture, {
 		file, type, label: 'the image', log,
 	});
 	return [file];
 }
 
-// Take a screenshot. A capture of the viewport and a full page that fits are
-// one image (JPEGs step down in quality to stay below GitHub's limit); a taller
-// full page is captured in slices (see the header comment).
-// options.pathFor(partSuffix) returns the file path of an image; resolves to
-// the files written.
-async function takeScreenshot(page, options) {
-	const {fullPage, scrollBeforeCapture, waitUntil} = options;
-	const log = options.log || (() => {});
-	const settings = {...options, log};
-
-	if (!fullPage) {
-		return writeSingleImage(page, settings, false);
-	}
-
-	const maxImageHeight = options.maxImageHeight || DEFAULT_MAX_IMAGE_HEIGHT;
-
-	if (scrollBeforeCapture) {
-		await prepareFullPage(page, {waitUntil, log});
-	}
-
-	const metrics = await measureDocument(page);
-	const dpr = metrics.deviceScaleFactor;
-	const slices = planSlices(metrics.height, dpr, maxImageHeight);
-	if (slices.length === 1) {
-		return writeSingleImage(page, settings, true);
-	}
-
-	log(
-		`Document is ${metrics.height} CSS px tall (${Math.ceil(
-			metrics.height * dpr,
-		)} px at ${dpr}x), above ${MAX_IMAGE_HEIGHT_INPUT} ${maxImageHeight}: capturing ${
-			slices.length
-		} consecutive parts.`,
-	);
-	if (slices.length > WARN_PART_COUNT) {
-		log(
-			`Warning: ${slices.length} parts will be written, consider a larger ${MAX_IMAGE_HEIGHT_INPUT}.`,
-		);
-	}
-
+// The slices of a document that is too tall for one image, one image each.
+// `screenshot(slice)` gives the options of page.screenshot besides type and
+// quality.
+async function writeSlices(page, options, {slices, screenshot}) {
 	const files = [];
 	/* eslint-disable no-await-in-loop -- slices are captured one after another */
-	for (let index = 0; index < slices.length; index++) {
-		const slice = slices[index];
+	for (const [index, slice] of slices.entries()) {
 		const file = options.pathFor(partSuffix(index, slices.length));
 		const capture = quality =>
-			page.screenshot({
-				type: options.type,
-				quality,
-				fullPage: true,
-				clip: {
-					x: 0, y: slice.y, width: metrics.width, height: slice.height,
-				},
-			});
+			page.screenshot({type: options.type, quality, ...screenshot(slice)});
 		const {buffer, quality} = await writeImage(capture, {
-			file, type: options.type, label: `part ${index + 1}`, log,
+			file, type: options.type, label: `part ${index + 1}`, log: options.log,
 		});
-		log(
+		options.log(
 			`Part ${index + 1} of ${slices.length}: ${file} (${buffer.length} bytes${
 				quality ? `, quality ${quality}` : ''
 			})`,
@@ -337,20 +400,130 @@ async function takeScreenshot(page, options) {
 	return files;
 }
 
+function logSlicePlan({height, dpr}, slices, {maxImageHeight, log}) {
+	log(
+		`Document is ${height} CSS px tall (${Math.ceil(
+			height * dpr,
+		)} px at ${dpr}x), above ${MAX_IMAGE_HEIGHT_INPUT} ${maxImageHeight}: capturing ${
+			slices.length
+		} consecutive parts.`,
+	);
+	if (slices.length > WARN_PART_COUNT) {
+		log(
+			`Warning: ${slices.length} parts will be written, consider a larger ${MAX_IMAGE_HEIGHT_INPUT}.`,
+		);
+	}
+}
+
+// The scroll strategy: Chromium's own full page capture, after scrolling
+// through the page (see the header comment)
+async function takeScrolledScreenshot(page, options) {
+	const {scrollBeforeCapture, waitUntil, log, maxImageHeight} = options;
+	if (scrollBeforeCapture) {
+		await prepareFullPage(page, {waitUntil, log});
+	}
+
+	const metrics = await measureDocument(page);
+	const dpr = metrics.deviceScaleFactor;
+	const slices = planSlices(metrics.height, dpr, maxImageHeight);
+	if (slices.length === 1) {
+		return writeSingleImage(page, options, {fullPage: true});
+	}
+
+	logSlicePlan({height: metrics.height, dpr}, slices, options);
+	return writeSlices(page, options, {
+		slices,
+		screenshot: slice => ({
+			fullPage: true,
+			clip: {
+				x: 0, y: slice.y, width: metrics.width, height: slice.height,
+			},
+		}),
+	});
+}
+
+// The grow-viewport strategy: the viewport is grown to the page, the
+// slices are clips of the viewport (fullPage false, so nothing is painted
+// beyond the screen), then the viewport is restored. The scrolling before the
+// capture is not needed: everything is on screen.
+async function takeGrownScreenshot(page, options) {
+	const {log, maxImageHeight} = options;
+	// Read before anything is changed: whatever happens, this is what is set back
+	const original = page.viewportSize();
+	if (!original) {
+		// A page without a fixed viewport cannot be set back to "no viewport"
+		log('full-page-strategy grow-viewport needs a page with a fixed viewport, which this one has not: using the scroll strategy.');
+		return takeScrolledScreenshot(page, options);
+	}
+
+	try {
+		const grown = await growViewport(page, {log, ...options.grow});
+		const metrics = await measureDocument(page);
+		const dpr = metrics.deviceScaleFactor;
+		// What the viewport shows: a page taller than the cap is cut there
+		const height = Math.min(metrics.height, grown.height);
+		const clip = slice => ({
+			x: 0, y: slice.y, width: grown.width, height: slice.height,
+		});
+		const slices = planSlices(height, dpr, maxImageHeight);
+		if (slices.length === 1) {
+			return await writeSingleImage(page, options, {fullPage: false, clip: clip(slices[0])});
+		}
+
+		logSlicePlan({height, dpr}, slices, options);
+		return await writeSlices(page, options, {
+			slices,
+			screenshot: slice => ({fullPage: false, clip: clip(slice)}),
+		});
+	} finally {
+		// Also when growing failed half way
+		await page.setViewportSize(original).catch(() => {});
+	}
+}
+
+/**
+ Take a screenshot. A capture of the viewport and a full page that fits are one
+ image (JPEGs step down in quality to stay below GitHub's limit); a taller full
+ page is captured in slices, see the header comment.
+ @param {object} page A Playwright page.
+ @param {{pathFor: (partSuffix: string) => string, type: string, fullPage?: boolean, strategy?: string, scrollBeforeCapture?: boolean, waitUntil?: string, maxImageHeight?: number, log?: (message: string) => void, grow?: object}} options What to capture; pathFor returns the file path of an image (or of a part, given its suffix).
+ @returns {Promise<string[]>} The files written.
+ */
+async function takeScreenshot(page, options) {
+	const settings = {
+		...options,
+		log: options.log || (() => {}),
+		maxImageHeight: options.maxImageHeight || DEFAULT_MAX_IMAGE_HEIGHT,
+	};
+	if (!options.fullPage) {
+		return writeSingleImage(page, settings, {fullPage: false});
+	}
+
+	return options.strategy === 'grow-viewport'
+		? takeGrownScreenshot(page, settings)
+		: takeScrolledScreenshot(page, settings);
+}
+
 export {
+	DEFAULT_FULL_PAGE_STRATEGY,
 	DEFAULT_MAX_IMAGE_HEIGHT,
+	FULL_PAGE_STRATEGIES,
 	HARD_MAX_IMAGE_HEIGHT,
+	MAX_GROW_HEIGHT,
 	JPEG_QUALITY_STEPS,
 	MAX_IMAGE_BYTES,
 	MIN_MAX_IMAGE_HEIGHT,
 	WARN_PART_COUNT,
+	capGrowHeight,
 	captureJpegWithinLimit,
 	cssGranule,
+	growViewport,
 	isScrollEnabled,
 	nextScrollOffset,
 	partSuffix,
 	planSlices,
 	prepareFullPage,
+	resolveFullPageStrategy,
 	resolveMaxImageHeight,
 	takeScreenshot,
 };

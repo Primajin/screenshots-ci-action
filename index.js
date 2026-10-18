@@ -7,7 +7,12 @@ import * as github from '@actions/github';
 import {chromium, devices} from 'playwright';
 import telegram from './telegram.js';
 import {runPreScript} from './pre-script.js';
-import {isScrollEnabled, resolveMaxImageHeight, takeScreenshot} from './capture.js';
+import {
+	isScrollEnabled,
+	resolveFullPageStrategy,
+	resolveMaxImageHeight,
+	takeScreenshot,
+} from './capture.js';
 import {buildCommentBody, commentMarker} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
@@ -110,6 +115,8 @@ function readConfig() {
 		devicesInput: core.getInput('devices'),
 		isNoDesktop: core.getInput('no-desktop') === 'true',
 		isFullPage: core.getInput('full-page') === 'true',
+		// How a full page capture brings the page on screen; an unknown value fails the run here
+		fullPageStrategy: resolveFullPageStrategy(core.getInput('full-page-strategy')),
 		// Only matters for full page captures; on unless explicitly switched off.
 		isScrollBeforeCapture: isScrollEnabled(core.getInput('scroll-before-capture')),
 		maxImageHeight: maxImage.value,
@@ -141,6 +148,7 @@ function logConfig(config) {
 		devices: config.devicesInput,
 		sizes: config.customSizes,
 		fullPage: config.isFullPage,
+		fullPageStrategy: config.fullPageStrategy,
 		scrollBeforeCapture: config.isScrollBeforeCapture,
 		maxImageHeight: config.maxImageHeight,
 		type: config.screenshotType,
@@ -191,6 +199,7 @@ const screenshotOptions = (config, pathFor) => ({
 	pathFor,
 	maxImageHeight: config.maxImageHeight,
 	fullPage: config.isFullPage,
+	strategy: config.fullPageStrategy,
 	type: config.screenshotType,
 	scrollBeforeCapture: config.isScrollBeforeCapture,
 	waitUntil: config.waitUntil,
@@ -331,6 +340,12 @@ function verifyConfig(config) {
 
 	if (!config.isNoDesktop && config.customSizes.length > 0) {
 		console.log('sizes is set and no-desktop is not true: the fixed desktop sizes are captured as well. Set no-desktop: true to capture only the custom sizes and the devices.');
+	}
+
+	if (config.fullPageStrategy === 'grow-viewport') {
+		console.log(config.isFullPage
+			? 'full-page-strategy grow-viewport: the viewport is grown to the height of the page for the capture, scroll-before-capture is ignored.'
+			: 'full-page-strategy grow-viewport only applies with full-page: true, it is ignored.');
 	}
 
 	return includedDevices;
