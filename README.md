@@ -29,16 +29,21 @@ Telegram chat.
 >   [release-please](https://github.com/googleapis/release-please) — pin a stable
 >   major with `Primajin/screenshots-ci-action@v4`.
 >
-> The outputs are the same as the original's and the inputs only differ in
-> their kebab-case names, so switching is mostly a matter of replacing
-> `flameddd/screenshots-ci-action@master` with `Primajin/screenshots-ci-action@v4`
-> and renaming the inputs. Since v4 uses Playwright, a few device names and
-> `wait-until` values behave differently; see
-> [Migrating from v3](#migrating-from-v3).
+> The screenshots are the same kind of files as the original's and the existing
+> inputs differ in their kebab-case names, so switching is mostly a matter of
+> replacing `flameddd/screenshots-ci-action@master` with
+> `Primajin/screenshots-ci-action@v4` and renaming the inputs. Since v4 uses
+> Playwright, a few device names and `wait-until` values behave differently;
+> see [Migrating from v3](#migrating-from-v3).
+
+**New in v4:** pre-scripts (log in first), scrolling before full page captures,
+tall pages split into parts, a configurable PR comment that is edited in place,
+and more. See [What v4 does that v3 could not](#what-v4-does-that-v3-could-not).
 
 ## Contents
 
 - [Quick start](#quick-start)
+- [What v4 does that v3 could not](#what-v4-does-that-v3-could-not)
 - [Inputs](#inputs) and [environment variables](#environment-variables)
 - [Output files](#output-files)
 - [Permissions, tokens and runners](#permissions-tokens-and-runners)
@@ -93,6 +98,30 @@ This captures the 7 desktop sizes and two devices into `screenshots/` and
 uploads that directory as a workflow artifact (the Artifacts section of the
 run). `actions/checkout` is only needed when you use a
 [pre-script](README.pre-script.md); the other examples keep it for consistency.
+
+## What v4 does that v3 could not
+
+v4 (Playwright) compared with v3.2.0 (Puppeteer). Every row was checked against
+the code of both versions; the capture, device, Telegram and local run rows also
+by running both. Changes that can break an existing workflow are listed in
+[Migrating from v3](#migrating-from-v3).
+
+| Capability | v3 | v4 | Read more |
+| --- | --- | --- | --- |
+| Log in or prepare the page first | No hook; the page is captured as it loads. | `pre-script-path`: your script runs once; its cookies and `localStorage` are used for every desktop and device capture. | [README.pre-script.md](README.pre-script.md) |
+| Lazy and scroll-reveal content in full page captures | No scrolling. On a 20,276 px test page everything below the first two sections was blank. | Scrolls through the page first (`scroll-before-capture`, on by default; at most 15 s and 150 steps). | [Tall pages](#tall-pages) |
+| Very tall pages | One image, whatever the height (40,552 px in the test). | Consecutive `-partN` images of at most `max-image-height` output pixels (default and ceiling `16000`). JPEG parts above about 4.8 MB (GitHub refuses comment images over 5 MB) are captured again at a lower quality. | [Tall pages](#tall-pages) |
+| PR comment layout | A heading, a link and a bare `<img>` per file. | `details` (closed accordions, the default), `inline` or `links`; grouping; `width` and `height` on every image so the page does not jump; headline; footer with commit and run link. | [PR comments](#pr-comments) |
+| One comment per pull request | A new comment on every run. | One comment per `comment-tag`, edited in place on every push (`comment-mode: new` posts a new one). | [PR comments](#pr-comments) |
+| Upload without a pull request | Only on pull request events. | With `comment: false` and a `release-id` the screenshots are uploaded on any event, for example `push`. | [PR comments](#pr-comments) |
+| `release-id` | Read by the code, but not declared in `action.yml`; described only in the README. | A declared input; a single long-lived pre-release shared by all pull requests is the documented setup. | [README.PR.md](README.PR.md) |
+| Devices | 66 device profiles (131 names with `landscape`). A name with a space after the comma, or in another case, was logged as invalid and skipped. | 107 profiles (207 names). Names are trimmed and matched without regard to case. An unknown name fails the run with "did you mean" suggestions. | [Supported mobile devices](#supported-mobile-devices) |
+| Browser setup | The Chrome of the runner; the v3 examples add an install step (`puppeteer-headful`). | The action installs its own Chromium, no extra step. | [Runners](#permissions-tokens-and-runners) |
+| `wait-for-selector-timeout: 0` | Became `30000`, although the description says 0 disables the timeout. | `0` disables the timeout. | [Inputs](#when-to-capture) |
+| `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
+| Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
+| Running on your machine | The `screenshots/` directory was only created when `GITHUB_WORKSPACE` was set (otherwise `ENOENT`), and without `GITHUB_REPOSITORY` the run failed after the capture. | Creates the directory and skips the GitHub steps. | [README.ci.md](README.ci.md#run-the-action-on-your-machine) |
+| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 17 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
 
 ## Inputs
 
@@ -750,8 +779,9 @@ viewport, user agent and scale factor.
 
 ## Migrating from v3
 
-v4 replaces Puppeteer with Playwright. Outputs are the same, but six things
-can change in an existing workflow:
+v4 replaces Puppeteer with Playwright. Outputs are the same kind of files, but
+six things can change in an existing workflow. What v4 adds on top is in
+[What v4 does that v3 could not](#what-v4-does-that-v3-could-not).
 
 1. **Input names are now kebab-case**, matching the GitHub Actions convention.
    The old camelCase names are **not** accepted any more; GitHub only prints an
@@ -776,7 +806,7 @@ can change in an existing workflow:
    exist in the kebab-case form in any released version.)
 2. **Device names** now come from Playwright's list (see the table below). An
    unknown name now **fails the run** with "did you mean" suggestions instead
-   of being skipped.
+   of being logged and skipped.
 3. **`wait-until`**: `networkidle0` and `networkidle2` are still accepted but
    both map to Playwright's single `networkidle`. The default is now
    `networkidle`. `commit` is new. Playwright's `networkidle` waits for **no**
