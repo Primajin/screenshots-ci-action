@@ -1,7 +1,9 @@
 import {Buffer} from 'node:buffer';
+import {spawnSync} from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import process from 'node:process';
 import zlib from 'node:zlib';
 import {
 	afterEach,
@@ -891,6 +893,62 @@ describe('color assertions', () => {
 			expect(() => main(['--dir', directory, '--color', 'purple'])).toThrow('Invalid --color');
 		} finally {
 			vi.restoreAllMocks();
+		}
+	});
+});
+
+describe('grey png files in colour checks', () => {
+	// An 8 bit grey png (colour type 0), or grey with alpha (type 4)
+	const encodeGrey = (width, height, grey, {alpha = false} = {}) => {
+		const channels = alpha ? 2 : 1;
+		const lines = [];
+		for (let y = 0; y < height; y++) {
+			const row = Buffer.alloc(1 + (width * channels));
+			for (let x = 0; x < width; x++) {
+				row[1 + (x * channels)] = grey(x, y);
+				if (alpha) {
+					row[2 + (x * channels)] = 255;
+				}
+			}
+
+			lines.push(row);
+		}
+
+		const header = Buffer.alloc(13);
+		header.writeUInt32BE(width, 0);
+		header.writeUInt32BE(height, 4);
+		header[8] = 8;
+		header[9] = alpha ? 4 : 0;
+		const compressed = zlib.deflateSync(Buffer.concat(lines));
+		return Buffer.concat([
+			Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+			chunk('IHDR', header),
+			chunk('IDAT', compressed),
+			chunk('IEND', Buffer.alloc(0)),
+		]);
+	};
+
+	it('treats the one channel as red, green and blue', () => {
+		for (const alpha of [false, true]) {
+			const image = encodeGrey(10, 4, x => (x < 5 ? 128 : 30), {alpha});
+			expect(colorFraction(image, parseColorSpec('808080')), `alpha ${alpha}`).toBeCloseTo(0.5);
+			expect(colorFraction(image, parseColorSpec('1e1e1e')), `alpha ${alpha}`).toBeCloseTo(0.5);
+			// Not grey: no pixel of a grey image is orange
+			expect(colorFraction(image, parseColorSpec('ff8800')), `alpha ${alpha}`).toBe(0);
+			expect(colorFraction(image, parseColorSpec('808080@0,0,5,4')), `alpha ${alpha}`).toBe(1);
+		}
+	});
+});
+
+describe('the scripts when they are imported', () => {
+	it('do not crash when argv[1] does not exist, and do not run', () => {
+		for (const script of ['assert-screenshots.mjs', 'assert-pr-comment.mjs', 'assert-rendered-html.mjs']) {
+			const url = JSON.stringify(`file://${path.join(import.meta.dirname, script)}`);
+			const code = `process.argv[1] = '/nonexistent/${script}'; await import(${url});`;
+			const result = spawnSync(process.execPath, ['--input-type=module', '-e', code], {encoding: 'utf8'});
+			expect(result.status, `${script}: ${result.stderr}`).toBe(0);
+			expect(result.stderr).toBe('');
+			expect(result.stdout).toBe('');
 		}
 	});
 });

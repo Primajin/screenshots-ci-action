@@ -216,7 +216,17 @@ function run(argv) {
 	return result.failures.length === 0 ? 0 : 1;
 }
 
-// Compare real paths, so a symlinked checkout does not turn the script into a silent no-op
-if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
+// Compare real paths, so a symlinked checkout does not turn the script into a
+// silent no-op; an argv[1] that is missing or does not exist (an import from a
+// REPL, a test runner) is not this script running
+function isRunDirectly() {
+	try {
+		return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+	} catch {
+		return false;
+	}
+}
+
+if (isRunDirectly()) {
 	process.exitCode = run(process.argv.slice(2));
 }

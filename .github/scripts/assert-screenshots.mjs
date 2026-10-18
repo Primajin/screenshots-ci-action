@@ -277,10 +277,12 @@ export function colorFraction(buffer, {rgb, region}, tolerance = FLAT_TOLERANCE)
 
 		const width = row.length / channels;
 		const end = region ? Math.min(width, region.x + region.width) : width;
+		// Grey images (colour types 0 and 4) have one colour channel: red, green and blue are it
+		const lastColor = channels >= 3 ? 2 : 0;
 		for (let x = region ? region.x : 0; x < end; x++) {
 			total++;
 			const offset = x * channels;
-			if (rgb.every((value, c) => Math.abs(row[offset + c] - value) <= tolerance)) {
+			if (rgb.every((value, c) => Math.abs(row[offset + Math.min(c, lastColor)] - value) <= tolerance)) {
 				matching++;
 			}
 		}
@@ -781,10 +783,18 @@ export function main(argv = process.argv.slice(2)) {
 	return 0;
 }
 
-if (
-	process.argv[1]
-	&& import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+// Compare real paths, so a symlinked checkout does not turn the script into a
+// silent no-op; an argv[1] that is missing or does not exist (an import from a
+// REPL, a test runner) is not this script running
+function isRunDirectly() {
+	try {
+		return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
+	} catch {
+		return false;
+	}
+}
+
+if (isRunDirectly()) {
 	try {
 		process.exitCode = main();
 	} catch (error) {

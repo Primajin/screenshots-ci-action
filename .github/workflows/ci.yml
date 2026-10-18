@@ -30,6 +30,12 @@ jobs:
       pull-requests: write
     uses: Primajin/.github/.github/workflows/reusable-lint-pr-title.yml@v1
 
+  fail-invalid-context-options:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_invalid-context-options.yml
+
   fail-missing-pre-script:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -59,6 +65,12 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_all-defaults.yml
+
+  pass-context-options:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_context-options.yml
 
   pass-devices:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
@@ -95,6 +107,13 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/_pass_no-desktop.yml
+
+  pass-per-run-files:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/_pass_per-run-files.yml
 
   pass-pre-script-login:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
@@ -139,17 +158,20 @@ jobs:
     needs:
       - test
       - lint-pr-title
+      - fail-invalid-context-options
       - fail-missing-pre-script
       - fail-pre-script-error
       - fail-pre-script-timeout
       - fail-unknown-device
       - pass-all-defaults
+      - pass-context-options
       - pass-devices
       - pass-external-login-pre-script
       - pass-full-page
       - pass-full-page-tall
       - pass-no-commit-hash-file-name
       - pass-no-desktop
+      - pass-per-run-files
       - pass-pre-script-login
       - pass-release-pr-comment
       - pass-type
