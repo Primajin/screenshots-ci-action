@@ -361,6 +361,106 @@ function buildContextOptions(descriptor = {}, storageState, overrides = {}) {
 	};
 }
 
+// The custom capture sizes of the `sizes` input.
+const MIN_SIZE = 1;
+const MAX_SIZE = 10_000;
+const MIN_SCALE = 0.1;
+const MAX_SCALE = 5;
+const SIZE_GRAMMAR = 'WIDTHxHEIGHT[@SCALE][:mobile]';
+const SIZE_EXAMPLES = '1440x900, 1440x900@2, 390x844@3:mobile';
+// Digits only: no sign, no exponent, no spaces inside an entry
+const SIZE_ENTRY = /^(?<width>\d+)x(?<height>\d+)(?:@(?<scale>\d+(?:\.\d+)?))?(?<mobile>:mobile)?$/iv;
+
+// Why one entry is not valid, or undefined when it is: {width, height, scale, mobile}
+function parseSizeEntry(entry) {
+	const match = SIZE_ENTRY.exec(entry);
+	if (!match) {
+		return {problem: `does not match ${SIZE_GRAMMAR}`};
+	}
+
+	const width = Number(match.groups.width);
+	const height = Number(match.groups.height);
+	if (width < MIN_SIZE || width > MAX_SIZE || height < MIN_SIZE || height > MAX_SIZE) {
+		return {problem: `width and height must be whole numbers from ${MIN_SIZE} to ${MAX_SIZE}`};
+	}
+
+	const scale = match.groups.scale === undefined ? 1 : Number(match.groups.scale);
+	if (!(scale >= MIN_SCALE && scale <= MAX_SCALE)) {
+		return {problem: `the scale must be a number from ${MIN_SCALE} to ${MAX_SCALE}`};
+	}
+
+	const size = {
+		width,
+		height,
+		scale,
+		mobile: match.groups.mobile !== undefined,
+	};
+	return {size};
+}
+
+/**
+ Parse the `sizes` input: a comma separated list of custom capture sizes
+ `WIDTHxHEIGHT[@SCALE][:mobile]`, for example `1440x900`, `1440x900@2` or
+ `390x844@3:mobile`. Whitespace around an entry is ignored, so are empty
+ entries (a trailing comma) and the case of `x` and `:mobile`; entries that are the same after
+ normalising (`1440x900` and `1440X900@1`) are captured once. WIDTH and HEIGHT are whole
+ numbers from 1 to 10000, SCALE (the device scale factor) a number from 0.1 to
+ 5 (default 1), `:mobile` switches isMobile and hasTouch on.
+ @param {string} [raw] The raw input; empty means no sizes.
+ @returns {{width: number, height: number, scale: number, mobile: boolean}[]} The sizes, in the order of their first appearance.
+ @throws {Error} Naming every invalid entry and the expected form: a wrong size would give wrong screenshots, so nothing is skipped silently.
+ */
+function parseSizes(raw) {
+	const entries = String(raw ?? '')
+		.split(',')
+		.map(entry => entry.trim())
+		.filter(Boolean);
+	const sizes = new Map();
+	const problems = [];
+	for (const entry of entries) {
+		const {size, problem} = parseSizeEntry(entry);
+		if (problem) {
+			problems.push(`- "${entry}": ${problem}`);
+		} else {
+			sizes.set(`${size.width}x${size.height}@${size.scale}${size.mobile ? ':mobile' : ''}`, size);
+		}
+	}
+
+	if (problems.length > 0) {
+		throw new Error([
+			`sizes has ${problems.length === 1 ? 'an invalid entry' : 'invalid entries'}; each entry must look like ${SIZE_GRAMMAR}, for example ${SIZE_EXAMPLES}. Not valid:`,
+			...problems,
+		].join('\n'));
+	}
+
+	return sizes.values().toArray();
+}
+
+/**
+ The file name (without part, commit hash and extension) of a custom size:
+ `size1440x900`, `size1440x900-2x`, `size390x844-3x-mobile`.
+ @param {{width: number, height: number, scale: number, mobile: boolean}} size A parsed size.
+ @returns {string} The name, safe in file names and URLs.
+ */
+function sizeFileBase({width, height, scale, mobile}) {
+	return `size${width}x${height}${scale === 1 ? '' : `-${scale}x`}${mobile ? '-mobile' : ''}`;
+}
+
+/**
+ The Playwright context options of a custom size, over the context-options of
+ the call: the viewport and the scale factor of the size always win (it is the
+ point of the entry), isMobile and hasTouch only when it is `:mobile`.
+ @param {{width: number, height: number, scale: number, mobile: boolean}} size A parsed size.
+ @returns {object} Options for buildContextOptions.
+ */
+function sizeContextOptions({width, height, scale, mobile}) {
+	return {
+		viewport: {width, height},
+		deviceScaleFactor: scale,
+		...(mobile && {isMobile: true, hasTouch: true}),
+	};
+}
+
 /**
  Normalize the screenshot type input.
  @param {string} [input] Raw type input.
@@ -392,6 +492,10 @@ export {
 	describeWaitUntil,
 	normalizeScreenshotType,
 	DEFAULT_WAITUNTIL_OPTION,
+	MAX_SCALE,
+	MAX_SIZE,
+	MIN_SCALE,
+	MIN_SIZE,
 	DEFAULT_WAIT_FOR_SELECTOR_TIMEOUT,
 	DEVICES_DOCS_URL,
 	PLAYWRIGHT_WAITUNTIL_OPTIONS,
@@ -400,7 +504,10 @@ export {
 	findCloseDevices,
 	formatInvalidDevicesError,
 	mapWaitUntil,
+	parseSizes,
 	resolveContextOptions,
 	resolveDesktopViewports,
 	resolveDevices,
+	sizeContextOptions,
+	sizeFileBase,
 };

@@ -82,6 +82,65 @@ describe('captureLabel', () => {
 		expect(captureLabel('desktopPage540x405-abc1234.jpeg')).toBe('Desktop 540');
 		expect(captureLabel('desktopPage1920x1080.png')).toBe('Desktop 1920');
 	});
+
+	it('shows the size, the scale and mobile of a custom size', () => {
+		expect(captureLabel('size1440x900-abc1234.jpeg')).toBe('Size 1,440 × 900');
+		expect(captureLabel('size1440x900-2x-abc1234.jpeg')).toBe('Size 1,440 × 900 @2x');
+		expect(captureLabel('size390x844-3x-mobile-abc1234.png')).toBe('Size 390 × 844 @3x, mobile');
+		expect(captureLabel('size390x844-mobile-1760000000000.jpeg')).toBe('Size 390 × 844, mobile');
+		expect(captureLabel('size800x600-1.5x.png')).toBe('Size 800 × 600 @1.5x');
+	});
+
+	it('leaves a device that only starts with size alone', () => {
+		expect(captureLabel('size_chart-abc1234.jpeg')).toBe('size chart');
+	});
+});
+
+describe('custom sizes in the comment', () => {
+	const names = ['iPhone_13-abc1234.jpeg', 'size390x844-3x-mobile-abc1234.jpeg', 'size1440x900-abc1234.jpeg', 'desktopPage540x405-abc1234.jpeg'];
+	const items = names.map(name => entry(name, `https://x/${name}`, 1024, {width: 100, height: 100}));
+
+	it('sorts desktop sizes first, then the custom sizes, then the devices', () => {
+		const body = renderComment(items, names);
+		const order = ['Desktop 540', 'Size 390 × 844 @3x, mobile', 'Size 1,440 × 900', 'iPhone 13'].map(label => body.indexOf(`<b>${label}</b>`));
+		expect(order.every(position => position > 0)).toBe(true);
+		expect(order).toEqual(order.toSorted((a, b) => a - b));
+	});
+
+	it('orders the custom sizes by width, height, scale and mobile, whatever the commit hash says', () => {
+		// The hashes are in the opposite order of what is expected
+		const sizes = [
+			'size1440x900-2x-mobile-aaaaaaa.jpeg',
+			'size1440x900-2x-bbbbbbb.jpeg',
+			'size1440x900-ccccccc.jpeg',
+			'size1440x900-mobile-ddddddd.jpeg',
+			'size390x844-3x-mobile-eeeeeee.jpeg',
+			'size390x844-fffffff.jpeg',
+			'size390x1000-0000001.jpeg',
+			'size1280x720-1.5x-0000002.jpeg',
+		];
+		const body = renderComment(sizes.map(name => entry(name, `https://x/${name}`, 1024, {width: 10, height: 10})), sizes);
+		const labels = [
+			'Size 390 × 844',
+			'Size 390 × 844 @3x, mobile',
+			'Size 390 × 1,000',
+			'Size 1,280 × 720 @1.5x',
+			'Size 1,440 × 900',
+			'Size 1,440 × 900, mobile',
+			'Size 1,440 × 900 @2x',
+			'Size 1,440 × 900 @2x, mobile',
+		];
+		const positions = labels.map(label => body.indexOf(`<b>${label}</b>`));
+		expect(positions.every(position => position > 0), positions.join(',')).toBe(true);
+		expect(positions).toEqual(positions.toSorted((a, b) => a - b));
+	});
+
+	it('keeps the parts of a custom size together', () => {
+		const parts = ['size390x844-3x-part1-abc1234.jpeg', 'size390x844-3x-part2-abc1234.jpeg'];
+		const body = renderComment(parts.map(name => entry(name, `https://x/${name}`)), parts);
+		expect(body).toContain('<summary><b>Size 390 × 844 @3x</b> · 2 parts');
+		expect(count(body, '<details>')).toBe(1);
+	});
 });
 
 describe('displaySize', () => {

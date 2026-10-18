@@ -43,6 +43,7 @@ Telegram chat.
 - [Output files](#output-files)
 - [Permissions, tokens and runners](#permissions-tokens-and-runners)
 - [Tall pages](#tall-pages) (`full-page`, `max-image-height`, `scroll-before-capture`)
+- [Custom sizes](#custom-sizes) (`sizes`: your own width, height and scale)
 - [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
 - [Examples](#examples)
@@ -133,7 +134,8 @@ All inputs are optional except `url`. How switches are read differs a little:
 | --- | --- | --- |
 | `url` | **required** | The website to capture. |
 | `devices` | `''` | Mobile devices to capture in addition to the desktop sizes. **Separate several names with a comma.** Any name from Playwright's device list, `iPhone 13` or `iPad Pro 11 landscape`; see [Supported mobile devices](#supported-mobile-devices). An unknown name fails the run. |
-| `no-desktop` | `false` | Set `true` to skip the 7 desktop sizes and capture only the devices (needs at least one device, otherwise nothing is captured). |
+| `sizes` | `''` | Custom capture sizes, comma separated, each `WIDTHxHEIGHT[@SCALE][:mobile]`: `1440x900`, `1440x900@2`, `390x844@3:mobile`. Each size is captured in its own context, **in addition to** the desktop sizes (set `no-desktop: true` to skip those) and the devices. An invalid entry fails the run. See [Custom sizes](#custom-sizes). |
+| `no-desktop` | `false` | Set `true` to skip the 7 desktop sizes and capture only the devices and the [custom sizes](#custom-sizes) (needs at least one device or size, otherwise nothing is captured). |
 | `full-page` | `false` | Set `true` to capture the whole scrollable page instead of the viewport. See [Tall pages](#tall-pages). |
 | `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
 | `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
@@ -208,7 +210,8 @@ itself**, so a second call does not upload or post the images of the first one
 again. The same goes for files that another step drops into `screenshots/`: they
 stay in the directory (and in an artifact of the whole directory) but are **not**
 uploaded, posted or sent. The release upload and the Telegram photos are in the
-order the call captured them (the desktop sizes, then the devices), not the order of the directory listing.
+order the call captured them (the desktop sizes, then the custom sizes, then the
+devices), not the order of the directory listing.
 
 There are three ways to get the screenshots out:
 
@@ -304,6 +307,56 @@ What this means:
 break workflows, see [Migrating from v3](#migrating-from-v3). Lower
 `max-image-height` for more, smaller parts; there is no way to get one image
 above `16000` pixels.
+
+## Custom sizes
+
+`sizes` captures your own resolutions, each with its own scale factor and, if
+you want, as a mobile device, without picking a device profile. It is a comma
+separated list; every entry looks like `WIDTHxHEIGHT[@SCALE][:mobile]`:
+
+| Entry | Viewport | Scale | Mobile | Image | File name |
+| --- | --- | --- | --- | --- | --- |
+| `1440x900` | 1440 × 900 | 1 | no | 1440 × 900 px | `size1440x900-<sha>.jpeg` |
+| `1440x900@2` | 1440 × 900 | 2 | no | 2880 × 1800 px | `size1440x900-2x-<sha>.jpeg` |
+| `390x844@3:mobile` | 390 × 844 | 3 | yes | 1170 × 2532 px | `size390x844-3x-mobile-<sha>.jpeg` |
+
+```yaml
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    no-desktop: true
+    sizes: 1440x900, 1440x900@2, 390x844@3:mobile
+```
+
+- `WIDTH` and `HEIGHT` are whole numbers from 1 to 10000, `SCALE` is the device
+  scale factor, a number from 0.1 to 5 (default 1), written with a dot
+  (`1.5`, `2.75`). `:mobile` switches `isMobile` and `hasTouch` on, like a phone.
+  Whitespace around an entry and empty entries (a trailing comma) are ignored,
+  and an entry that is the same after normalising (`1440x900` and `1440X900@1`) is
+  captured once.
+- **An invalid entry fails the run** before a browser is started, naming every
+  invalid entry and the expected form. Nothing is skipped silently: a wrong size
+  would give wrong screenshots (v3 skipped an unknown device name, which was a
+  pain).
+- **No device profile.** A custom size is a plain Chromium context with that
+  viewport and scale factor: the user agent is Chromium's own (also for
+  `:mobile`, which only turns on the mobile viewport behaviour and touch). Use
+  `devices` for a phone's real user agent.
+- **With the other inputs.** `sizes` is **added** to the fixed desktop sizes and
+  to `devices`, like `devices` is added to the desktop sizes: `sizes: 1440x900`
+  alone gives the 7 desktop sizes **and** `size1440x900`. Set `no-desktop: true`
+  to get only your sizes. (The action cannot tell an absent `no-desktop` from
+  `false`, and a rule that changes when you add or drop a line is harder to read
+  than one extra input.) The session of a [pre-script](README.pre-script.md) is
+  used like for every other capture, and [`context-options`](#context-options)
+  apply as well (colour scheme, reduced motion, locale, ...); the viewport and the
+  scale factor of an entry win over a `viewport` or `deviceScaleFactor` in
+  `context-options`, and `isMobile` and `hasTouch` of `context-options` stay
+  unless the entry is `:mobile`.
+- **Full page, parts, comment.** Everything of [Tall pages](#tall-pages) works
+  (`full-page`, `max-image-height`, `-partN`). In the PR comment a capture is
+  named `Size 1,440 × 900 @2x` (`Size 390 × 844 @3x, mobile`); custom sizes are
+  listed after the desktop sizes and before the devices.
 
 ## Context options
 

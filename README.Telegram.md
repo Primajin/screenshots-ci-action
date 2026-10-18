@@ -97,7 +97,7 @@ multipart upload). There is no Telegram library and no extra dependency.
   a little softer than the files in the artifact. They are not sent as
   documents.
 - Only the files this call of the action wrote are sent, in the order they were
-  captured (the desktop sizes, then the devices). A file
+  captured (the desktop sizes, then the custom sizes, then the devices). A file
   that another step, or an earlier call of the action, put into `screenshots/` is
   **not** sent. A tall page that was captured in parts (`-part1`, `-part2`, ...)
   is sent part by part.
