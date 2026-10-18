@@ -1,0 +1,116 @@
+name: "Positive Test - full page, grow viewport"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - grow-viewport renders a cross-origin iframe in a full page capture, its parts have no seams, and scroll keeps Chromium's behaviour"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Serve the second origin (a solid magenta page on 127.0.0.1, another site than localhost)
+        run: |
+          nohup node .github/smoke-fixtures/second-origin-server.js 8082 >/dev/null 2>&1 &
+          for _ in $(seq 1 40); do
+            curl -sf http://127.0.0.1:8082/ >/dev/null && break
+            sleep 0.25
+          done
+          curl -sf http://127.0.0.1:8082/ >/dev/null
+
+      # The sandboxed iframe of ?mode=iframe is 600x400 at x=64, y=1500 of the
+      # page, below the first viewport. The region below is inside it.
+      - name: Capture the page with grow-viewport
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=iframe
+          no-desktop: true
+          sizes: 1280x720
+          full-page: true
+          full-page-strategy: grow-viewport
+          type: png
+      - name: Assert the page is complete and the iframe region is the colour of the other site
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "grow-viewport" --archive-to artifacts/grow-single --expect-count 1 --type png --min-height 2200 --max-height 4000 --color 'ff00ff@84,1520,560,360:0.95'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # Parts cut from the grown viewport join without a gap or an overlap
+      - name: Capture the same page with grow-viewport in parts of at most 1000px
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=iframe
+          no-desktop: true
+          sizes: 1280x720
+          full-page: true
+          full-page-strategy: grow-viewport
+          max-image-height: 1000
+          type: png
+      - name: Assert the parts add up to the single image and the iframe is in them
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "grow-viewport, parts" --archive-to artifacts/grow-parts --max-height 1000 --type png --distinct-parts
+          node .github/scripts/assert-screenshots.mjs --compare-sliced artifacts/grow-single artifacts/grow-parts
+          # Part 2 holds the top of the iframe (y 1000 to 1999 of the page, the region starts at 1520); the page is more than 2000px high, so there are at least 3 parts
+          node .github/scripts/assert-screenshots.mjs --match 'size1280x720-part3-*' --expect-count 1
+          node .github/scripts/assert-screenshots.mjs --match 'size1280x720-part2-*' --expect-count 1 --color 'ff00ff@84,520,560,360:0.95'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # Scale factor 2: the slices of the clip are in output pixels
+      - name: Capture with grow-viewport at scale factor 2 as JPEG
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=iframe
+          no-desktop: true
+          sizes: 1280x720@2
+          full-page: true
+          full-page-strategy: grow-viewport
+          scroll-before-capture: false
+      - name: Assert one JPEG as tall as the page at twice the scale
+        run: node .github/scripts/assert-screenshots.mjs --title "grow-viewport, scale 2" --archive-to artifacts/grow-2x --expect-count 1 --type jpeg --min-height 4400
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # The control: Chromium's own full page capture (the default, scroll)
+      # leaves the cross-origin iframe blank. This is Chromium's behaviour and
+      # may differ between versions and platforms, so a different result is
+      # reported as a warning and does not fail the scenario.
+      - name: Capture the same page with the scroll strategy (control, non-blocking)
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=iframe
+          no-desktop: true
+          sizes: 1280x720
+          full-page: true
+          type: png
+      - name: Check that the iframe region is blank with scroll (control, a different Chromium only warns)
+        run: |
+          set +e
+          node .github/scripts/assert-screenshots.mjs --title "scroll strategy (control)" --archive-to artifacts/scroll-control --expect-count 1 --type png --color 'ff00ff@84,1520,560,360:0-0.01' > control.log 2>&1
+          status=$?
+          set -e
+          cat control.log
+          if [ "$status" -eq 0 ]; then
+            echo "As in the study: Chromium's full page capture leaves the cross-origin iframe blank, grow-viewport renders it" | tee -a "$GITHUB_STEP_SUMMARY"
+          elif grep -qE 'of the region 84,1520 560x360 is #ff00ff, expected between 0.0% and 1.0%' control.log; then
+            # The only failure that is Chromium's: the iframe was painted
+            echo "::warning::Chromium rendered the cross-origin iframe in a full page capture on this runner, so the control shows no difference (the grow-viewport assertions above still hold)"
+          else
+            # Anything else (no file, a broken assertion) is a real failure of the scenario
+            echo "::error::The control could not be evaluated (exit code $status), see the log above"
+            exit 1
+          fi
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-full-page-grow-viewport
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn

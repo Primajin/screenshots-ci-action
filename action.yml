@@ -24,6 +24,10 @@ inputs:
     required: false
     description: "When true, takes a screenshot of the full scrollable page instead of the viewport. Defaults to false."
     default: false
+  full-page-strategy:
+    required: false
+    description: "Only applies when full-page is true. scroll (default): scroll through the page, then use Chromium's full page capture. grow-viewport: grow the viewport to the height of the page and capture it in slices without Chromium's full page mode, so cross-origin iframes (map embeds) render instead of coming out blank; scroll-before-capture is ignored. Any other value fails the run."
+    default: 'scroll'
   scroll-before-capture:
     required: false
     description: "Only applies when full-page is true. Scroll through the whole page before the capture so lazy-loaded and scroll-reveal content is rendered. Default true; false, 0, no and off (any case) switch it off."
@@ -159,6 +163,7 @@ runs:
         INPUT_DEVICES: ${{ inputs.devices }}
         INPUT_SIZES: ${{ inputs.sizes }}
         INPUT_FULL-PAGE: ${{ inputs.full-page }}
+        INPUT_FULL-PAGE-STRATEGY: ${{ inputs.full-page-strategy }}
         INPUT_SCROLL-BEFORE-CAPTURE: ${{ inputs.scroll-before-capture }}
         INPUT_MAX-IMAGE-HEIGHT: ${{ inputs.max-image-height }}
         INPUT_CONTEXT-OPTIONS: ${{ inputs.context-options }}

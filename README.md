@@ -42,7 +42,7 @@ Telegram chat.
 - [Inputs](#inputs) and [environment variables](#environment-variables)
 - [Output files](#output-files)
 - [Permissions, tokens and runners](#permissions-tokens-and-runners)
-- [Tall pages](#tall-pages) (`full-page`, `max-image-height`, `scroll-before-capture`)
+- [Tall pages](#tall-pages) (`full-page`, `full-page-strategy`, `max-image-height`, `scroll-before-capture`)
 - [Custom sizes](#custom-sizes) (`sizes`: your own width, height and scale)
 - [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
@@ -118,7 +118,7 @@ by running both. Changes that can break an existing workflow are listed in
 | `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
 | Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
 | Running on your machine | The `screenshots/` directory was only created when `GITHUB_WORKSPACE` was set (otherwise `ENOENT`), and without `GITHUB_REPOSITORY` the run failed after the capture. | Creates the directory and skips the GitHub steps. | [README.ci.md](README.ci.md#run-the-action-on-your-machine) |
-| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 23 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
+| Tests | Unit tests: none. One workflow asserted anything (the viewport size of device captures); the others only ran the action. | Vitest unit tests and 24 scenario workflows that run the action against a local fixture site and assert on the images. | [README.ci.md](README.ci.md) |
 
 ## Inputs
 
@@ -137,6 +137,7 @@ All inputs are optional except `url`. How switches are read differs a little:
 | `sizes` | `''` | Custom capture sizes, comma separated, each `WIDTHxHEIGHT[@SCALE][:mobile]`: `1440x900`, `1440x900@2`, `390x844@3:mobile`. Each size is captured in its own context, **in addition to** the desktop sizes (set `no-desktop: true` to skip those) and the devices. An invalid entry fails the run. See [Custom sizes](#custom-sizes). |
 | `no-desktop` | `false` | Set `true` to skip the 7 desktop sizes and capture only the devices and the [custom sizes](#custom-sizes) (needs at least one device or size, otherwise nothing is captured). |
 | `full-page` | `false` | Set `true` to capture the whole scrollable page instead of the viewport. See [Tall pages](#tall-pages). |
+| `full-page-strategy` | `scroll` | Only used when `full-page` is `true`. `scroll`: scroll through the page, then use Chromium's own full page capture. `grow-viewport`: grow the viewport to the height of the page and capture it in slices **without** Chromium's full page mode, so a cross-origin iframe (a map embed) renders instead of coming out blank; `scroll-before-capture` is ignored. Any other value fails the run. See [Tall pages](#tall-pages). |
 | `scroll-before-capture` | `true` | Only used when `full-page` is `true`. Scrolls through the whole page before the capture, so lazy-loaded images and scroll-reveal (IntersectionObserver) content are rendered. `false`, `0`, `no` and `off` (any case) switch it off, anything else keeps it on. See [Tall pages](#tall-pages). |
 | `max-image-height` | `16000` | Only used when `full-page` is `true`. Maximum height in **output pixels** (CSS pixels x device scale factor) of one image: `100` to `16000`, default and ceiling `16000`. A taller page produces `-partN` files instead of one file. Values above `16000` are lowered to it and `1` to `99` are raised to `100`; `0`, a negative or a non-integer value falls back to `16000`, each with a warning. See [Tall pages](#tall-pages). |
 | `context-options` | `''` | A JSON object with Playwright browser context options that are applied to **every** capture, desktop and devices: `colorScheme`, `reducedMotion`, `forcedColors`, `deviceScaleFactor`, `isMobile`, `hasTouch`, `viewport`, `locale`, `timezoneId`, `userAgent`. Invalid JSON, an unknown key or a wrong type fails the run. A `viewport` replaces the 7 fixed desktop sizes with that one. See [Context options](#context-options). |
@@ -272,6 +273,46 @@ full page capture the action therefore scrolls through the document in
 viewport-sized steps (at most 15 seconds and 150 steps, so infinite-scroll pages
 stop), goes back to the top and waits for the page height to settle. Turn this
 off with `scroll-before-capture: false` (accepted off values: `false`, `0`, `no`, `off`).
+
+**Strategy (`full-page-strategy`).** With the default `scroll` the action scrolls
+and then uses Chromium's own full page capture. That mode paints what lies
+beyond the viewport without ever bringing it on screen, and some content only
+paints on screen: a **cross-origin iframe**, such as an OpenStreetMap or Google
+Maps embed, comes out as a blank rectangle. `full-page-strategy: grow-viewport`
+captures differently:
+
+1. The viewport is grown to the height of the page: up to 5 passes (a taller
+   viewport can change the page itself, think of anything sized in `vh`) of
+   resizing to the document height and waiting 500 ms, until the height is
+   stable. The width stays. The page is never grown beyond **100,000 CSS
+   pixels**; a taller page is cut there and the log says so.
+2. The action waits, as far as it can, for the network to be idle (at most 5 s)
+   and for one more second, so media that only now started loading can arrive.
+3. The slices are captured as clips of the viewport without Chromium's full
+   page mode (`fullPage` is false), so everything is on screen and the iframe
+   renders. `max-image-height` parts, the JPEG size guard and the scale factor
+   work as before.
+4. The viewport is set back to what it was.
+
+`scroll-before-capture` is ignored in this mode (everything is on screen, so
+lazy and scroll-reveal content is triggered by the resize). Things to know:
+
+- **The width is the viewport's.** The clips are as wide as the viewport (the
+  grown viewport keeps its width), so a page that overflows horizontally is
+  **cropped** at the right edge, where the default strategy captures the scroll
+  width of the document.
+- **It takes time.** Every capture waits at least about two seconds (500 ms after
+  the resize, the network to be idle and one more second), more with several
+  passes or a busy network; each desktop size, custom size and device is a
+  capture of its own.
+- **A page without a fixed viewport** cannot be set back, so such a capture uses
+  the `scroll` strategy and logs it (the action's own contexts always have a
+  viewport).
+- **Other things.** Elements fixed to the viewport (a floating button, a sticky header) end up in
+  the corners of the whole page, a page that sizes its height from the viewport
+  (`100vh`) is as tall as it makes itself, and very tall viewports at a high
+  `deviceScaleFactor` need a lot of memory. Any other value than `scroll` or
+  `grow-viewport` fails the run.
 
 **Parts.** A page whose output height (CSS pixels x device scale factor) is
 above `max-image-height` is captured as consecutive parts that together cover the page

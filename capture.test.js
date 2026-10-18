@@ -10,12 +10,18 @@ import {
 	it,
 } from 'vitest';
 import {
+	DEFAULT_FULL_PAGE_STRATEGY,
+	FULL_PAGE_STRATEGIES,
+	MAX_GROW_HEIGHT,
+	capGrowHeight,
 	captureJpegWithinLimit,
 	cssGranule,
+	growViewport,
 	isScrollEnabled,
 	nextScrollOffset,
 	partSuffix,
 	planSlices,
+	resolveFullPageStrategy,
 	resolveMaxImageHeight,
 	takeScreenshot,
 } from './capture.js';
@@ -283,22 +289,74 @@ describe('takeScreenshot', () => {
 		maxImageHeight: 16_000,
 	};
 
-	it('keeps the single capture for a fixed viewport', async () => {
+	it('writes one image for a fixed viewport', async () => {
 		const page = fakePage({height: 99_999});
 		const files = await takeScreenshot(page, {...base, fullPage: false});
 		expect(files).toEqual([pathFor('')]);
-		expect(page.shots).toEqual([
-			{path: pathFor(''), fullPage: false, type: 'jpeg'},
-		]);
+		expect(page.shots).toEqual([{type: 'jpeg', quality: 80, fullPage: false}]);
+		expect(fs.readFileSync(pathFor('')).length).toBe(10);
 	});
 
-	it('keeps the single full page capture below the limit', async () => {
+	it('writes one image for a full page that fits the limit', async () => {
 		const page = fakePage({height: 16_000});
 		const files = await takeScreenshot(page, {...base, fullPage: true});
 		expect(files).toEqual([pathFor('')]);
-		expect(page.shots).toEqual([
-			{path: pathFor(''), fullPage: true, type: 'jpeg'},
-		]);
+		expect(page.shots).toEqual([{type: 'jpeg', quality: 80, fullPage: true}]);
+		expect(fs.existsSync(pathFor(''))).toBe(true);
+	});
+
+	it('steps the JPEG quality down for a viewport capture that is too large', async () => {
+		const page = fakePage({
+			height: 700,
+			bytes: options => (options.quality > 60 ? 5 * 1024 * 1024 : 1234),
+		});
+		const files = await takeScreenshot(page, {...base, fullPage: false});
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60]);
+		expect(fs.readFileSync(files[0]).length).toBe(1234);
+	});
+
+	it('steps the JPEG quality down for a full page that fits one image (the gap the single capture had)', async () => {
+		const page = fakePage({
+			height: 3000,
+			bytes: options => (options.quality > 50 ? 6 * 1024 * 1024 : 4321),
+		});
+		const files = await takeScreenshot(page, {...base, fullPage: true});
+		expect(files).toEqual([pathFor('')]);
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60, 50]);
+		expect(page.shots.every(shot => shot.fullPage === true && shot.clip === undefined)).toBe(true);
+		expect(fs.readFileSync(files[0]).length).toBe(4321);
+	});
+
+	it('logs when a single JPEG is still too large at the lowest quality', async () => {
+		const page = fakePage({height: 700, bytes: () => 6 * 1024 * 1024});
+		const logs = [];
+		await takeScreenshot(page, {
+			...base,
+			fullPage: true,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(page.shots.map(shot => shot.quality)).toEqual([80, 70, 60, 50, 40]);
+		expect(logs).toEqual([`The image is still ${6 * 1024 * 1024} bytes at quality 40.`]);
+	});
+
+	it('does not step a PNG down but warns about a huge single image', async () => {
+		const page = fakePage({height: 700, bytes: () => (5 * 1024 * 1024) + 1});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			pathFor: part => path.join(directory, `shot${part}.png`),
+			type: 'png',
+			fullPage: false,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(page.shots).toEqual([{type: 'png', quality: undefined, fullPage: false}]);
+		expect(files).toHaveLength(1);
+		expect(logs).toHaveLength(1);
+		expect(logs[0]).toContain('Warning: the image is');
 	});
 
 	it('scrolls through the page before a full page capture', async () => {
@@ -400,5 +458,357 @@ describe('takeScreenshot', () => {
 		expect(
 			logs.filter(message => message.startsWith('Warning')),
 		).toHaveLength(2);
+	});
+});
+
+describe('resolveFullPageStrategy', () => {
+	it('is scroll by default', () => {
+		expect(DEFAULT_FULL_PAGE_STRATEGY).toBe('scroll');
+		for (const input of ['', '  ', undefined, null]) {
+			expect(resolveFullPageStrategy(input)).toBe('scroll');
+		}
+	});
+
+	it('accepts both strategies, in any case and with whitespace', () => {
+		expect(FULL_PAGE_STRATEGIES).toEqual(['scroll', 'grow-viewport']);
+		expect(resolveFullPageStrategy('scroll')).toBe('scroll');
+		expect(resolveFullPageStrategy(' Grow-Viewport ')).toBe('grow-viewport');
+	});
+
+	it('fails for anything else, naming the value and the choices', () => {
+		for (const input of ['grow', 'viewport', 'grow_viewport', 'true', 'scrol']) {
+			expect(() => resolveFullPageStrategy(input), input).toThrow(`Unknown full-page-strategy "${input}"; use scroll or grow-viewport.`);
+		}
+	});
+});
+
+describe('capGrowHeight', () => {
+	it('keeps a height up to the cap, also exactly at it', () => {
+		expect(capGrowHeight(1)).toEqual({height: 1, capped: false});
+		expect(capGrowHeight(MAX_GROW_HEIGHT)).toEqual({height: MAX_GROW_HEIGHT, capped: false});
+		expect(MAX_GROW_HEIGHT).toBe(100_000);
+	});
+
+	it('cuts a taller page at the cap', () => {
+		expect(capGrowHeight(100_001)).toEqual({height: 100_000, capped: true});
+		expect(capGrowHeight(5000, 4000)).toEqual({height: 4000, capped: true});
+		expect(capGrowHeight(4000, 4000)).toEqual({height: 4000, capped: false});
+	});
+});
+
+// A page double whose document is `content(viewport)` CSS px tall, at least as tall as the viewport
+// (like scrollHeight); setViewportSize resizes it.
+function growablePage({
+	content, width = 1000, height = 700, dpr = 1, bytes = () => 10, failScreenshot = false, rejectIdle = false, failMeasureAfterResize = false, noViewport = false,
+}) {
+	const state = {
+		viewport: {width, height},
+		resizes: [],
+		scrolls: [],
+		shots: [],
+		idle: [],
+	};
+	return {
+		state,
+		viewportSize: () => (noViewport ? null : {...state.viewport}),
+		async setViewportSize(size) {
+			state.viewport = {...size};
+			state.resizes.push({...size});
+		},
+		async evaluate(fn, argument) {
+			if (String(fn).includes('scrollTo')) {
+				state.scrolls.push(argument);
+				return undefined;
+			}
+
+			if (failMeasureAfterResize && state.resizes.length > 0) {
+				throw new Error('the page crashed');
+			}
+
+			return {
+				height: Math.max(content(state.viewport), state.viewport.height),
+				width: state.viewport.width,
+				viewportHeight: state.viewport.height,
+				deviceScaleFactor: dpr,
+			};
+		},
+		async screenshot(options) {
+			if (failScreenshot) {
+				throw new Error('screenshot failed');
+			}
+
+			state.shots.push({...options, viewport: {...state.viewport}});
+			return Buffer.alloc(bytes(options));
+		},
+		async waitForLoadState(name, options) {
+			state.idle.push([name, options]);
+			if (rejectIdle) {
+				throw new Error('Timeout');
+			}
+		},
+	};
+}
+
+const noWait = {sleep: async () => undefined};
+
+describe('growViewport', () => {
+	it('grows the viewport to the height of the page and keeps the width', async () => {
+		const page = growablePage({content: () => 5000});
+		const result = await growViewport(page, noWait);
+		expect(page.state.resizes).toEqual([{width: 1000, height: 5000}]);
+		expect(result).toEqual({
+			original: {width: 1000, height: 700}, width: 1000, height: 5000, capped: false, passes: 1,
+		});
+	});
+
+	it('waits after the resize, then for the network and a last settle time', async () => {
+		const waits = [];
+		const page = growablePage({content: () => 3000});
+		await growViewport(page, {
+			passWaitMs: 11,
+			settleMs: 22,
+			idleTimeoutMs: 33,
+			async sleep(ms) {
+				waits.push(ms);
+			},
+		});
+		expect(waits).toEqual([11, 22]);
+		expect(page.state.idle).toEqual([['networkidle', {timeout: 33}]]);
+	});
+
+	it('uses the documented waits by default', async () => {
+		const waits = [];
+		const page = growablePage({content: () => 3000});
+		await growViewport(page, {
+			async sleep(ms) {
+				waits.push(ms);
+			},
+		});
+		expect(waits).toEqual([500, 1000]);
+		expect(page.state.idle).toEqual([['networkidle', {timeout: 5000}]]);
+	});
+
+	it('repeats until the height is stable, because a taller viewport can change the page', async () => {
+		// Anything sized in vh: the page is half a viewport taller than the viewport, up to 4000
+		const page = growablePage({content: viewport => Math.min(4000, viewport.height + 500)});
+		const result = await growViewport(page, noWait);
+		expect(page.state.resizes.map(size => size.height)).toEqual([1200, 1700, 2200, 2700, 3200]);
+		expect(result.passes).toBe(5);
+		expect(result.height).toBe(3200);
+	});
+
+	it('stops after five passes however much the page keeps growing', async () => {
+		const page = growablePage({content: viewport => viewport.height + 1000});
+		const result = await growViewport(page, noWait);
+		expect(page.state.resizes).toHaveLength(5);
+		expect(result.passes).toBe(5);
+	});
+
+	it('stops growing beyond the cap, logs it and does not repeat', async () => {
+		const logs = [];
+		const page = growablePage({content: () => 250_000});
+		const result = await growViewport(page, {
+			...noWait,
+			maxHeight: 10_000,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(page.state.resizes).toEqual([{width: 1000, height: 10_000}]);
+		expect(result).toMatchObject({height: 10_000, capped: true, passes: 1});
+		expect(logs[0]).toBe('The page is taller than 10000 CSS px: the viewport was not grown beyond that, the rest of the page is not captured.');
+		expect(logs[1]).toContain('Grew the viewport to 1000 x 10000 CSS px in 1 pass');
+	});
+
+	it('caps at 100000 CSS px by default', async () => {
+		const page = growablePage({content: () => 500_000});
+		await growViewport(page, noWait);
+		expect(page.state.resizes).toEqual([{width: 1000, height: 100_000}]);
+	});
+
+	it('still works when the page is already as tall as the viewport', async () => {
+		const page = growablePage({content: () => 100, height: 700});
+		const result = await growViewport(page, noWait);
+		expect(result).toMatchObject({height: 700, capped: false, passes: 1});
+	});
+
+	it('ignores a network that never gets idle', async () => {
+		const page = growablePage({content: () => 3000, rejectIdle: true});
+		await expect(growViewport(page, noWait)).resolves.toMatchObject({height: 3000});
+	});
+
+	it('logs what it did', async () => {
+		const logs = [];
+		const page = growablePage({content: () => 3000});
+		await growViewport(page, {
+			...noWait,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(logs).toEqual(['Grew the viewport to 1000 x 3000 CSS px in 1 pass before the capture.']);
+	});
+});
+
+describe('takeScreenshot with the grow-viewport strategy', () => {
+	let directory;
+
+	beforeEach(() => {
+		directory = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-grow-'));
+	});
+
+	afterEach(() => {
+		fs.rmSync(directory, {recursive: true, force: true});
+	});
+
+	const pathFor = part => path.join(directory, `shot${part}-abc1234.jpeg`);
+	const base = {
+		pathFor,
+		type: 'jpeg',
+		fullPage: true,
+		strategy: 'grow-viewport',
+		scrollBeforeCapture: true,
+		waitUntil: 'networkidle',
+		maxImageHeight: 16_000,
+		grow: noWait,
+	};
+
+	it('captures one clip of the grown viewport, with fullPage false, and restores the viewport', async () => {
+		const page = growablePage({content: () => 5000});
+		const files = await takeScreenshot(page, base);
+		expect(files).toEqual([pathFor('')]);
+		expect(page.state.shots).toEqual([{
+			type: 'jpeg',
+			quality: 80,
+			fullPage: false,
+			clip: {
+				x: 0, y: 0, width: 1000, height: 5000,
+			},
+			viewport: {width: 1000, height: 5000},
+		}]);
+		expect(page.state.viewport).toEqual({width: 1000, height: 700});
+		expect(fs.existsSync(pathFor(''))).toBe(true);
+	});
+
+	it('does not scroll, scroll-before-capture is ignored', async () => {
+		const page = growablePage({content: () => 5000});
+		await takeScreenshot(page, {...base, scrollBeforeCapture: true});
+		expect(page.state.scrolls).toEqual([]);
+	});
+
+	it('slices a page taller than max-image-height into clips of the grown viewport', async () => {
+		const page = growablePage({content: () => 20_276});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(files).toEqual([pathFor('-part1'), pathFor('-part2')]);
+		expect(page.state.shots.map(shot => shot.clip)).toEqual([
+			{
+				x: 0, y: 0, width: 1000, height: 16_000,
+			},
+			{
+				x: 0, y: 16_000, width: 1000, height: 4276,
+			},
+		]);
+		expect(page.state.shots.every(shot => shot.fullPage === false)).toBe(true);
+		// Both slices were taken while the viewport was grown
+		expect(page.state.shots.every(shot => shot.viewport.height === 20_276)).toBe(true);
+		expect(page.state.viewport).toEqual({width: 1000, height: 700});
+		expect(logs.some(message => message.includes('capturing 2 consecutive parts'))).toBe(true);
+	});
+
+	it('honours the device scale factor in the slices', async () => {
+		const page = growablePage({content: () => 5000, dpr: 3});
+		await takeScreenshot(page, {...base, maxImageHeight: 4000});
+		// 4000 / 3 = 1333 CSS px per slice
+		expect(page.state.shots.map(shot => shot.clip.height)).toEqual([1333, 1333, 1333, 1001]);
+	});
+
+	it('captures only what the capped viewport shows, and says so', async () => {
+		const page = growablePage({content: () => 40_000});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			grow: {...noWait, maxHeight: 20_000},
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(files).toHaveLength(2);
+		const heights = page.state.shots.map(shot => shot.clip.height);
+		expect(heights.reduce((sum, height) => sum + height, 0)).toBe(20_000);
+		expect(logs.some(message => message.includes('taller than 20000 CSS px'))).toBe(true);
+	});
+
+	it('steps the JPEG quality down per slice', async () => {
+		const page = growablePage({
+			content: () => 20_000,
+			bytes: options => (options.quality > 60 ? 5 * 1024 * 1024 : 1000),
+		});
+		await takeScreenshot(page, base);
+		expect(page.state.shots.map(shot => shot.quality)).toEqual([80, 70, 60, 80, 70, 60]);
+	});
+
+	it('captures PNG without a quality', async () => {
+		const page = growablePage({content: () => 3000});
+		const files = await takeScreenshot(page, {
+			...base,
+			type: 'png',
+			pathFor: part => path.join(directory, `shot${part}.png`),
+		});
+		expect(files).toHaveLength(1);
+		expect(page.state.shots[0].quality).toBeUndefined();
+	});
+
+	it('restores the viewport even when the capture fails', async () => {
+		const page = growablePage({content: () => 5000, failScreenshot: true});
+		await expect(takeScreenshot(page, base)).rejects.toThrow('screenshot failed');
+		expect(page.state.viewport).toEqual({width: 1000, height: 700});
+	});
+
+	it('sets the viewport back when growing it fails half way', async () => {
+		const page = growablePage({content: () => 5000, failMeasureAfterResize: true});
+		await expect(takeScreenshot(page, base)).rejects.toThrow('the page crashed');
+		// It was grown (one resize) and is back at its own size
+		expect(page.state.resizes[0]).toEqual({width: 1000, height: 5000});
+		expect(page.state.viewport).toEqual({width: 1000, height: 700});
+		expect(page.state.shots).toEqual([]);
+	});
+
+	it('uses the scroll strategy for a page without a fixed viewport instead of leaving it grown', async () => {
+		const page = growablePage({content: () => 5000, noViewport: true});
+		const logs = [];
+		const files = await takeScreenshot(page, {
+			...base,
+			log(message) {
+				logs.push(message);
+			},
+		});
+		expect(files).toHaveLength(1);
+		expect(page.state.resizes).toEqual([]);
+		expect(page.state.shots[0]).toMatchObject({fullPage: true});
+		expect(page.state.shots[0].clip).toBeUndefined();
+		expect(logs[0]).toContain('needs a page with a fixed viewport');
+	});
+
+	it('is not used for a viewport capture', async () => {
+		const page = growablePage({content: () => 5000});
+		await takeScreenshot(page, {...base, fullPage: false});
+		expect(page.state.resizes).toEqual([]);
+		expect(page.state.shots).toEqual([{
+			type: 'jpeg', quality: 80, fullPage: false, viewport: {width: 1000, height: 700},
+		}]);
+	});
+
+	it('is not used by the scroll strategy, which keeps Chromium full page capture', async () => {
+		const page = growablePage({content: () => 5000});
+		await takeScreenshot(page, {...base, strategy: 'scroll', scrollBeforeCapture: false});
+		expect(page.state.resizes).toEqual([]);
+		expect(page.state.shots[0]).toMatchObject({fullPage: true});
+		expect(page.state.shots[0].clip).toBeUndefined();
 	});
 });
