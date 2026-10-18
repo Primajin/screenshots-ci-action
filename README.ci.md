@@ -21,13 +21,14 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-full-page-tall` | the 20276px `?mode=tall` page (full-page) is captured in consecutive parts (3 for an iPad Pro 11 by default, 16 for an iPhone 13 with `max-image-height: 4000`, 13 with `5000`; `99999` is clamped and logged): at most the maximum per part, parts add up to the page, no blank 250px bands, distinct parts, and the 4000px and 5000px captures consist of identical pixel rows (no gap or overlap at a seam). A control with `scroll-before-capture: false` must fail the blank band check, which tests the input parsing end to end |
 | `pass-context-options` | `context-options` end to end, proven by the colours of the `?mode=scheme` page: dark, reduced motion and a scale factor of 2 on a desktop context and on a device (a `viewport` leaves one desktop file of 1600x1200 instead of seven), the unchanged light and mouse colours without the input (control), a 390x844 mobile context with touch, and the session of a pre-script kept next to the options |
 | `pass-sizes` | `sizes` end to end: a messy list (whitespace, an empty entry, a duplicate in another case) gives exactly four images of width x scale by height x scale (1440x900, 2880x1800 for `@2`, 1170x2532 for `390x844@3:mobile`, 1200x900 for `@1.5`) with file names that carry the scale and `-mobile` and no `@`, no desktop file with `no-desktop: true`; `:mobile` shows the touch colour of `?mode=scheme` and the same size without it does not; sizes next to the desktop capture and a device with `context-options` (the entry wins over their viewport and scale factor, the dark scheme applies); a tall page at a custom size is sliced into parts |
+| `pass-comment-section` | `comment-section` on the PR: four calls with one `comment-tag` and the headline `Component showcase`. Call 1 (desktop light, `comment-open: first`) creates the comment with one open section; call 2 (dark) adds a section after it and leaves the first byte for byte as it was (same comment id, one footer); call 3 (a `390x844@3:mobile` size) adds a third; call 4 (dark again, scale factor 2) replaces only the dark section where it is. Every step asserts the ordered section slugs, the images per section, the untouched sections and (for call 4) that the call uploaded exactly one release asset. The scenario deletes its own comment from an earlier run first, see below |
 | `pass-per-run-files` | two sequential calls in one job on the PR (comment tags `per-run-first` and `per-run-second`): the directory holds both images, each comment embeds only its own image and the second call uploaded exactly one release asset |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
 | `pass-wait-until` | `domcontentloaded` works, legacy `networkidle0` is mapped and logged, unknown values fall back |
 | `pass-wait-for-selector` | visible, hidden and timeout `0` wait for a late element (the page grows beyond 3000px); a timeout still takes the screenshot |
 | `pass-uses-external-url` | a public site (example.com) |
-| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes no comment. See below |
+| `pass-release-pr-comment` | upload to the CI pre-release and the PR comment. The default options must give exactly one bot comment with the marker `<!-- screenshots-ci-action:screenshots -->` that uses closed `<details>` (no `<details open`), has `width` and `height` on every `<img>` and the commit; a second call with the same tag must edit that comment (same id, new body, still one comment); a tall page (parts, `part N of M`) with `comment-tag: tall` keeps its own comment, and as GitHub renders it (`body_html`) every part is at least 500 px wide and has no height attribute (GitHub cuts a height above 2000 and shrinks the width with it, which made narrow strips); a `comment-layout: links` call with `comment-tag: links` posts a separate comment without `<img`; `comment: false` uploads but changes none of the scenario's comments (compared by its own tags, as other scenarios write to the PR at the same time). See below |
 | `fail-invalid-context-options` | invalid JSON, a value that is not an object, an unknown key and wrong types fail with a message that names the problem, and nothing is captured |
 | `fail-invalid-size` | a malformed entry, a width or height out of 1 to 10000, a scale of 0 or above 5 and a device name in `sizes` fail with a message that names every invalid entry and shows `WIDTHxHEIGHT[@SCALE][:mobile]`, and nothing is captured |
 | `fail-unknown-device` | the step fails and the message contains `did you mean` |
@@ -49,6 +50,13 @@ writes a table (file, format, dimensions, size) to the job summary.
 2. Add a job `pass-<name>` to `ci.yml` (same `if:` and `permissions:` as its
    neighbours) and list it under `needs:` of `all-green`.
 3. Add a row to the table above.
+4. A scenario that posts to the pull request or uploads to the CI release runs
+   **at the same time** as the others (they are separate jobs). Give it comment
+   tags of its own, assert per tag (`assert-pr-comment.mjs` always does), and never
+   compare or count all comments of the PR or the assets of the release: the
+   others change them while you look. Compare what is yours (the comments with
+   your tags, the assets with the timestamp of your call), and use `>=` on a time
+   window for assets.
 
 ## Run the action on your machine
 
@@ -99,7 +107,10 @@ tests (`npm test`) need neither a browser nor a network.
   pull request comments (JSON lines from `gh api --jq '... | tojson'`): count of
   bot comments with the marker of a tag, id kept or different, number of
   `<img>`, closed `<details>`, `width`/`height` on every image, required and
-  forbidden text. Unit tested in `assert-pr-comment.test.js`.
+  forbidden text, and the sections of a `comment-section` comment (their ordered
+  slugs, the text and images of one section, a section left byte for byte
+  untouched since an earlier `--write-section`). Unit tested in
+  `assert-pr-comment.test.js`.
   `assert-release-assets.sh` (every screenshot is a new release asset) and
   `assert-image-url.sh` (an image URL of the comment is publicly downloadable)
   are small shell helpers next to it.
@@ -151,6 +162,12 @@ prefix, so release-please and the major tag job ignore it). Its numeric id
 (415059795) is the single `CI_RELEASE_ID` line at the top of
 `_pass_release-pr-comment.yml`.
 
+`pass-comment-section` is the second scenario that posts to the PR (comment tag
+`section-test`, queue `comment-section-<pr>`). Its comment keeps the sections of
+every earlier run, so it starts by deleting the comment of that tag written by
+`github-actions[bot]` and then rebuilds it call by call; that is the only
+deletion in the CI, next to the pruning below.
+
 Assets are named `<ISO timestamp>-<file name>`, so scenarios and re-runs never
 collide; they accumulate over time. The scenario only counts assets created
 after the call started, and checks that an image URL is publicly downloadable
@@ -170,7 +187,7 @@ A release holds at most 1000 assets and each run adds about 9. The last step of
 the scenario therefore deletes assets of release `415059795` (and only that
 release) older than 30 days, judged by the asset `created_at`. It does nothing
 while the release has fewer than 600 assets, so normally it is a no-op. Nothing
-else in the repository is deleted by CI.
+else in the repository is deleted by CI (except the comment `pass-comment-section` starts from, see above).
 
 Recreate the release if it is ever deleted:
 

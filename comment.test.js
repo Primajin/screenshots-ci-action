@@ -7,6 +7,7 @@ import {
 	commentMarker,
 	displaySize,
 	formatBytes,
+	mergeSection,
 	parseFileName,
 	renderComment,
 } from './comment.js';
@@ -602,5 +603,284 @@ describe('mixing parts and single images', () => {
 		);
 		expect(count(body, '<details>')).toBe(2);
 		expect(body.indexOf('https://x/a1')).toBeLessThan(body.indexOf('https://x/b'));
+	});
+});
+
+describe('mergeSection', () => {
+	const frame = {headline: 'Showcase', footer: '<sub>Commit abc1234</sub>\n'};
+	const marker = '<!-- screenshots-ci-action:showcase -->';
+	const start = slug => `<!-- screenshots-ci-action:showcase:section:${slug} -->`;
+	const end = slug => `<!-- /screenshots-ci-action:showcase:section:${slug} -->`;
+	const block = (slug, content) => `${start(slug)}\n${content}\n${end(slug)}\n\n`;
+
+	it('builds the whole comment when there is no previous body', () => {
+		const expected = `${marker}\n### Showcase\n\n${block('desktop-light', 'LIGHT')}<sub>Commit abc1234</sub>\n`;
+		expect(mergeSection(undefined, 'showcase', 'desktop-light', 'LIGHT\n\n', frame)).toBe(expected);
+		expect(mergeSection('', 'showcase', 'desktop-light', 'LIGHT', frame)).toBe(expected);
+	});
+
+	it('adds a section after the existing ones and leaves them byte for byte as they were', () => {
+		const first = mergeSection(undefined, 'showcase', 'desktop-light', '<details>\nLIGHT\n</details>\n', frame);
+		const second = mergeSection(first, 'showcase', 'desktop-dark', 'DARK', frame);
+		expect(second).toBe(`${marker}\n### Showcase\n\n${block('desktop-light', '<details>\nLIGHT\n</details>')}${block('desktop-dark', 'DARK')}<sub>Commit abc1234</sub>\n`);
+		expect(second.indexOf('LIGHT')).toBeLessThan(second.indexOf('DARK'));
+	});
+
+	it('replaces its own section where it is, so the order is the order of first insertion', () => {
+		let body;
+		for (const [slug, content] of [['a', 'A1'], ['b', 'B1'], ['c', 'C1']]) {
+			body = mergeSection(body, 'showcase', slug, content, frame);
+		}
+
+		const updated = mergeSection(body, 'showcase', 'a', 'A2', frame);
+		expect(updated).toBe(`${marker}\n### Showcase\n\n${block('a', 'A2')}${block('b', 'B1')}${block('c', 'C1')}<sub>Commit abc1234</sub>\n`);
+		expect(mergeSection(updated, 'showcase', 'b', 'B2', frame))
+			.toBe(`${marker}\n### Showcase\n\n${block('a', 'A2')}${block('b', 'B2')}${block('c', 'C1')}<sub>Commit abc1234</sub>\n`);
+	});
+
+	it('is idempotent for the same section', () => {
+		const once = mergeSection(mergeSection(undefined, 'showcase', 'a', 'A', frame), 'showcase', 'b', 'B', frame);
+		expect(mergeSection(once, 'showcase', 'b', 'B', frame)).toBe(once);
+	});
+
+	it('takes the headline and the footer from the latest call, and may drop the footer', () => {
+		const first = mergeSection(undefined, 'showcase', 'a', 'A', frame);
+		const second = mergeSection(first, 'showcase', 'b', 'B', {headline: 'New <headline>'});
+		expect(second.startsWith(`${marker}\n### New &lt;headline&gt;\n\n`)).toBe(true);
+		expect(second).not.toContain('<sub>');
+		expect(second).toContain(block('a', 'A'));
+	});
+
+	it('keeps sections whose content has blank lines, markdown and html', () => {
+		const content = '<details open>\n<summary><b>x</b></summary>\n\n- [open](https://x/1)\n\n<img src="https://x/1">\n\n</details>';
+		const merged = mergeSection(mergeSection(undefined, 'showcase', 'a', content, frame), 'showcase', 'b', 'B', frame);
+		expect(merged).toContain(block('a', content));
+	});
+
+	it('ignores sections of another tag', () => {
+		const other = '<!-- screenshots-ci-action:other -->\n### X\n\n<!-- screenshots-ci-action:other:section:a -->\nOTHER\n<!-- /screenshots-ci-action:other:section:a -->\n\n';
+		const merged = mergeSection(other, 'showcase', 'b', 'B', frame);
+		expect(merged).not.toContain('OTHER');
+		expect(merged).toContain(block('b', 'B'));
+	});
+
+	it('starts over for a previous comment that has no sections (the tag was used without a section before)', () => {
+		const old = `${marker}\n### Screenshots\n\n<details>\nOLD\n</details>\n\n<sub>Commit 1111111</sub>\n`;
+		const merged = mergeSection(old, 'showcase', 'a', 'A', frame);
+		expect(merged).not.toContain('OLD');
+		expect(merged).toBe(`${marker}\n### Showcase\n\n${block('a', 'A')}<sub>Commit abc1234</sub>\n`);
+	});
+
+	it('does not keep a section whose end marker is missing or whose slug is not a slug', () => {
+		const damaged = `${marker}\n### X\n\n${start('a')}\nA\n\n<!-- screenshots-ci-action:showcase:section:b c -->\nBAD\n<!-- /screenshots-ci-action:showcase:section:b c -->\n\n${block('d', 'D')}`;
+		const merged = mergeSection(damaged, 'showcase', 'e', 'E', frame);
+		expect(merged).toBe(`${marker}\n### Showcase\n\n${block('d', 'D')}${block('e', 'E')}<sub>Commit abc1234</sub>\n`);
+	});
+
+	it('keeps only the first of two sections with the same slug, a comment edited by hand', () => {
+		const duplicated = `${marker}\n### X\n\n${block('a', 'FIRST')}${block('b', 'B')}${block('a', 'SECOND')}`;
+		const merged = mergeSection(duplicated, 'showcase', 'c', 'C', frame);
+		expect(merged).toBe(`${marker}\n### Showcase\n\n${block('a', 'FIRST')}${block('b', 'B')}${block('c', 'C')}<sub>Commit abc1234</sub>\n`);
+		const replaced = mergeSection(duplicated, 'showcase', 'a', 'NEW', frame);
+		expect(replaced).toBe(`${marker}\n### Showcase\n\n${block('a', 'NEW')}${block('b', 'B')}<sub>Commit abc1234</sub>\n`);
+		expect(replaced).not.toContain('SECOND');
+	});
+
+	it('works for a tag with spaces and dots', () => {
+		const first = mergeSection(undefined, 'my tag.v2', 'a', 'A', frame);
+		expect(first).toContain('<!-- screenshots-ci-action:my tag.v2:section:a -->');
+		expect(mergeSection(first, 'my tag.v2', 'b', 'B', frame)).toContain('A\n<!-- /screenshots-ci-action:my tag.v2:section:a -->');
+	});
+
+	it('works for slugs in other languages', () => {
+		const first = mergeSection(undefined, 'showcase', 'dunkel-übersicht', 'A', frame);
+		expect(mergeSection(first, 'showcase', 'dunkel-übersicht', 'B', frame)).toBe(`${marker}\n### Showcase\n\n${block('dunkel-übersicht', 'B')}<sub>Commit abc1234</sub>\n`);
+	});
+});
+
+describe('renderComment with a section', () => {
+	const section = {name: 'Desktop · light theme', slug: 'desktop-light-theme'};
+	const sectionStart = '<!-- screenshots-ci-action:screenshots:section:desktop-light-theme -->';
+	const sectionEnd = '<!-- /screenshots-ci-action:screenshots:section:desktop-light-theme -->';
+	const desktop = ['desktopPage1440x900-abc1234.png'];
+	const oneCapture = [entry(desktop[0], 'https://x/d1440', 2048, {width: 1440, height: 900})];
+
+	it('wraps one group titled with the section name in the markers, below the shared headline', () => {
+		const body = renderComment(oneCapture, desktop, {section});
+		expect(body.startsWith('<!-- screenshots-ci-action:screenshots -->\n### Screenshots\n\n' + sectionStart + '\n<details>\n')).toBe(true);
+		expect(body).toContain('<summary><b>Desktop · light theme</b> · 1,440 × 900 px · 2 KB</summary>');
+		expect(body).toContain(`</details>\n${sectionEnd}\n\n`);
+		expect(count(body, '<details')).toBe(1);
+	});
+
+	it('shows one group for several captures, whatever comment-group-by says', () => {
+		for (const groupBy of ['capture', 'all', 'none']) {
+			const body = renderComment(uploaded, files, {section, groupBy});
+			expect(count(body, '<details'), groupBy).toBe(1);
+			expect(body, groupBy).toContain('<summary><b>Desktop · light theme</b> · 4 captures · 5 images · ');
+			expect(body, groupBy).toContain('**Desktop 540** · 540 × 405 px');
+			expect(body, groupBy).toContain('**iPhone 13**');
+		}
+	});
+
+	it('lists a capture of one tall page with its parts and its failures in the summary', () => {
+		const tall = files.slice(2, 5);
+		const body = renderComment([entry(tall[0], 'https://x/1', 1024, {width: 390, height: 16_000}), entry(tall[2], 'https://x/3', 1024, {width: 390, height: 4000})], tall, {section});
+		expect(body).toContain('<summary><b>Desktop · light theme</b> · 390 × 20,000 px · 3 parts · 2 KB · part 2 failed to upload</summary>');
+		expect(body).not.toContain('> [!WARNING]');
+	});
+
+	it('puts failed uploads of several captures into the section, before its end marker', () => {
+		const body = renderComment(uploaded, files, {section});
+		expect(body).toContain('> [!WARNING]');
+		expect(body.indexOf('> [!WARNING]')).toBeLessThan(body.indexOf(sectionEnd));
+	});
+
+	it('applies comment-open within the call: first and all open the section, none keeps it closed', () => {
+		expect(renderComment(oneCapture, desktop, {section, open: 'first'})).toContain('<details open>');
+		expect(renderComment(oneCapture, desktop, {section, open: 'all'})).toContain('<details open>');
+		expect(renderComment(oneCapture, desktop, {section, open: 'none'})).not.toContain('<details open');
+		expect(count(renderComment(uploaded, files, {section, open: 'all'}), '<details open>')).toBe(1);
+	});
+
+	it('supports the inline and links layouts', () => {
+		const inline = renderComment(oneCapture, desktop, {section, layout: 'inline'});
+		expect(inline).toContain('#### Desktop · light theme · 1,440 × 900 px · 2 KB');
+		expect(inline).toContain('<img ');
+		const links = renderComment(uploaded, files, {section, layout: 'links'});
+		expect(links).not.toContain('<img');
+		expect(links).toContain('- **Desktop · light theme** · ');
+		expect(links.indexOf(sectionStart)).toBeLessThan(links.indexOf(sectionEnd));
+	});
+
+	it('escapes the section name', () => {
+		const body = renderComment(oneCapture, desktop, {section: {name: '<script>"x"&', slug: 'script-x'}});
+		expect(body).toContain('<summary><b>&lt;script&gt;&quot;x&quot;&amp;</b>');
+		expect(body).not.toContain('<script>');
+	});
+
+	it('merges into the previous body: the other sections stay, this one is replaced in place', () => {
+		const dark = {name: 'Desktop · dark theme', slug: 'desktop-dark-theme'};
+		const darkFiles = ['desktopPage1440x900-abc1234.png'];
+		const first = renderComment(oneCapture, desktop, {section});
+		const second = renderComment(
+			[entry(darkFiles[0], 'https://x/dark', 1024, {width: 1440, height: 900})],
+			darkFiles,
+			{section: dark, previousBody: first},
+		);
+		expect(second.indexOf('Desktop · light theme')).toBeLessThan(second.indexOf('Desktop · dark theme'));
+		expect(second).toContain('https://x/d1440');
+		expect(second).toContain('https://x/dark');
+		expect(count(second, '<details')).toBe(2);
+
+		const third = renderComment(
+			[entry(desktop[0], 'https://x/d1440-new', 4096, {width: 1440, height: 900})],
+			desktop,
+			{section, previousBody: second},
+		);
+		expect(third).not.toContain('https://x/d1440"');
+		expect(third).toContain('https://x/d1440-new');
+		expect(third).toContain('https://x/dark');
+		expect(third.indexOf('Desktop · light theme')).toBeLessThan(third.indexOf('Desktop · dark theme'));
+		expect(count(third, '<details')).toBe(2);
+	});
+
+	it('puts the footer once, after the last section', () => {
+		const footer = {sha: 'abcdef1234567', runUrl: 'https://github.com/o/r/actions/runs/1'};
+		const first = renderComment(oneCapture, desktop, {section, footer});
+		const second = renderComment(oneCapture, desktop, {section: {name: 'B', slug: 'b'}, previousBody: first, footer});
+		expect(count(second, '<sub>')).toBe(1);
+		expect(second.trimEnd().endsWith('</sub>')).toBe(true);
+	});
+
+	it('does not render a section for nothing', () => {
+		expect(renderComment([], desktop, {section})).toBe('');
+	});
+
+	it('renders as before without a section', () => {
+		const plain = renderComment(uploaded, files);
+		expect(plain).not.toContain(':section:');
+		expect(renderComment(uploaded, files, {section: null})).toBe(plain);
+	});
+});
+
+describe('buildCommentBody with a section', () => {
+	const bigFiles = Array.from({length: 40}, (_, index) => `iPhone_${index}-abc1234.jpeg`);
+	const bigUploaded = bigFiles.map(name => entry(name, `https://x/${name}`, 1024, {width: 300, height: 600}));
+	const other = {name: 'Other', slug: 'other'};
+	const mine = {name: 'Mine', slug: 'mine'};
+	const otherFiles = ['desktopPage1440x900-abc1234.png'];
+	const previousBody = renderComment([entry(otherFiles[0], 'https://x/other-image', 1024, {width: 1440, height: 900})], otherFiles, {section: other});
+
+	it('merges without warnings when the comment fits', () => {
+		const {body, warnings} = buildCommentBody(bigUploaded.slice(0, 2), bigFiles.slice(0, 2), {section: mine, previousBody});
+		expect(warnings).toEqual([]);
+		expect(body).toContain('https://x/other-image');
+		expect(body).toContain('<!-- screenshots-ci-action:screenshots:section:mine -->');
+	});
+
+	it('turns only its own section into links when the merged comment is too long', () => {
+		const full = renderComment(bigUploaded, bigFiles, {section: mine, previousBody});
+		const limit = full.length - 100;
+		const {body, warnings} = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, limit);
+		expect(body.length).toBeLessThanOrEqual(limit);
+		expect(warnings[0]).toContain('The section "Mine" makes the comment');
+		expect(warnings[0]).toContain('only links instead of the images for this section');
+		// The other section is untouched, with its image
+		expect(body).toContain('<img src="https://x/other-image"');
+		expect(count(body, '<img ')).toBe(1);
+		expect(body).toContain('- **Mine** · ');
+		expect(body.indexOf('Other')).toBeLessThan(body.indexOf('Mine'));
+	});
+
+	it('cuts the list of its own section when even the links do not fit, and keeps the other section', () => {
+		const links = renderComment(bigUploaded, bigFiles, {section: mine, previousBody, layout: 'links'});
+		const limit = links.length - 200;
+		const {body, warnings} = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, limit);
+		expect(body.length).toBeLessThanOrEqual(limit);
+		expect(warnings.some(message => message.includes('images are not listed'))).toBe(true);
+		expect(body).toContain('…and ');
+		expect(body).toContain('https://x/other-image');
+		expect(body).toContain('<!-- /screenshots-ci-action:screenshots:section:mine -->');
+	});
+
+	it('does not offer a body when the other sections leave less room than even the note needs', () => {
+		// The limit is what the other section alone takes: nothing can be added
+		const {body, warnings, full} = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, previousBody.length);
+		expect(full).toBe(true);
+		expect(body).toBe('');
+		expect(warnings.at(-1)).toBe('The comment is full: the section "Mine" could not be added, not even as a note. Shorten the other sections or use a different comment-tag.');
+		expect(warnings.some(message => message.includes('was replaced by a note'))).toBe(false);
+	});
+
+	// The smallest list the section can show is one link and "...and 39 more": less than that is a note
+	const oneLink = renderComment(bigUploaded.slice(0, 1), bigFiles.slice(0, 1), {
+		section: mine, previousBody, layout: 'links', omitted: 39,
+	}).length;
+
+	it('still offers the note when even one link does not fit but the note does, and is not full', () => {
+		const result = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, oneLink - 1);
+		expect(result.full).toBeUndefined();
+		expect(result.body).toContain('…40 images not listed');
+		expect(result.body.length).toBeLessThanOrEqual(oneLink - 1);
+	});
+
+	it('never produces a body above the limit: it is either within it or not offered', () => {
+		const base = renderComment([entry(otherFiles[0], 'https://x/other-image', 1024, {width: 1440, height: 900})], otherFiles, {section: other});
+		for (let limit = base.length - 50; limit < base.length + 400; limit += 7) {
+			const result = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, limit);
+			expect(result.full ? '' : result.body.slice(0, 0), `limit ${limit}`).toBe('');
+			if (!result.full) {
+				expect(result.body.length, `limit ${limit}`).toBeLessThanOrEqual(limit);
+			}
+		}
+	});
+
+	it('replaces its section by a note instead of cutting the body when nothing of it fits', () => {
+		const {body, warnings} = buildCommentBody(bigUploaded, bigFiles, {section: mine, previousBody}, oneLink - 1);
+		expect(warnings.some(message => message.includes('was replaced by a note'))).toBe(true);
+		expect(body).toContain('…40 images not listed, see the release assets.');
+		expect(body).toContain('<!-- /screenshots-ci-action:screenshots:section:mine -->');
+		expect(body).toContain('https://x/other-image');
 	});
 });

@@ -57,10 +57,11 @@ async function findPreviousComment(octokit, {owner, repo, issueNumber, marker, a
 /**
  Create the comment, or edit the previous one in `update` mode.
  @param {object} octokit An authenticated octokit.
- @param {{owner: string, repo: string, issueNumber: number, body: string, marker: string, mode: 'update' | 'new', log?: (message: string) => void}} options What to post.
- @returns {Promise<{action: 'created' | 'updated', id: number}>} What happened.
+ @param {{owner: string, repo: string, issueNumber: number, body?: string, render?: (previousBody: string | undefined) => string | null, marker: string, mode: 'update' | 'new', log?: (message: string) => void}} options What to post: the finished `body`, or `render`, which gets the body of the comment that is edited (undefined when a new one is created) and returns the body to post, so a section can be merged into it, or null for no comment at all (a section that does not fit).
+ @returns {Promise<{action: 'created' | 'updated' | 'skipped', id?: number}>} What happened; skipped when render answered null (nothing was posted).
  */
-async function publishComment(octokit, {owner, repo, issueNumber, body, marker, mode, log = console.log}) {
+async function publishComment(octokit, {owner, repo, issueNumber, body, render, marker, mode, log = console.log}) {
+	const compose = previousBody => (render ? render(previousBody) : body);
 	if (mode === 'update') {
 		const previous = await findPreviousComment(octokit, {
 			owner,
@@ -71,11 +72,16 @@ async function publishComment(octokit, {owner, repo, issueNumber, body, marker, 
 		});
 		if (previous) {
 			try {
+				const merged = compose(previous.body);
+				if (merged === null) {
+					return {action: 'skipped'};
+				}
+
 				const {data} = await octokit.rest.issues.updateComment({
 					owner,
 					repo,
 					comment_id: previous.id,
-					body,
+					body: merged,
 				});
 				return {action: 'updated', id: data?.id ?? previous.id};
 			} catch (error) {
@@ -91,11 +97,16 @@ async function publishComment(octokit, {owner, repo, issueNumber, body, marker, 
 		}
 	}
 
+	const fresh = compose(undefined);
+	if (fresh === null) {
+		return {action: 'skipped'};
+	}
+
 	const {data} = await octokit.rest.issues.createComment({
 		owner,
 		repo,
 		issue_number: issueNumber,
-		body,
+		body: fresh,
 	});
 	return {action: 'created', id: data?.id};
 }

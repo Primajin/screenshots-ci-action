@@ -36,6 +36,118 @@ export function findTagged(comments, tag) {
 	);
 }
 
+// The sections of a comment that was posted with comment-section: the hidden
+//   <!-- screenshots-ci-action:<tag>:section:<slug> --> ... <!-- /screenshots-ci-action:<tag>:section:<slug> -->
+// pairs, in the order they are in. Returns {sections: [{slug, content}], problems}
+// where problems lists markers that are not balanced.
+export function findSections(body, tag) {
+	const prefix = `<!-- screenshots-ci-action:${tag}:section:`;
+	const closePrefix = `<!-- /screenshots-ci-action:${tag}:section:`;
+	const sections = [];
+	const problems = [];
+	let open;
+	for (const line of body.split('\n')) {
+		if (line.startsWith(prefix) && line.endsWith(' -->')) {
+			if (open) {
+				problems.push(`The section "${open.slug}" is not closed before "${line}"`);
+			}
+
+			open = {slug: line.slice(prefix.length, -' -->'.length), lines: []};
+		} else if (line.startsWith(closePrefix) && line.endsWith(' -->')) {
+			const slug = line.slice(closePrefix.length, -' -->'.length);
+			if (open?.slug === slug) {
+				sections.push({slug, content: open.lines.join('\n')});
+			} else {
+				problems.push(`The end marker of the section "${slug}" has no matching start marker`);
+			}
+
+			open = undefined;
+		} else if (open) {
+			open.lines.push(line);
+		}
+	}
+
+	if (open) {
+		problems.push(`The section "${open.slug}" is not closed`);
+	}
+
+	return {sections, problems};
+}
+
+// "slug=value" -> [slug, value]
+const splitPair = pair => {
+	const index = pair.indexOf('=');
+	return index === -1 ? [pair, ''] : [pair.slice(0, index), pair.slice(index + 1)];
+};
+
+// The sections the spec talks about at all
+const hasSectionSpec = spec => spec.sections !== undefined
+	|| ['sectionContains', 'sectionNotContains', 'sectionImages', 'sectionEquals'].some(key => (spec[key] ?? []).length > 0);
+
+// Checks of one section by slug; `failures` collects what is wrong
+function checkSectionContent(sections, spec, failures) {
+	const contentOf = (slug, what) => {
+		const section = sections.find(item => item.slug === slug);
+		if (!section) {
+			failures.push(`There is no section "${slug}" to check ${what}`);
+		}
+
+		return section?.content;
+	};
+
+	for (const pair of spec.sectionContains ?? []) {
+		const [slug, text] = splitPair(pair);
+		const content = contentOf(slug, `for the text: ${text}`);
+		if (content !== undefined && !content.includes(text)) {
+			failures.push(`The section "${slug}" does not contain: ${text}`);
+		}
+	}
+
+	for (const pair of spec.sectionNotContains ?? []) {
+		const [slug, text] = splitPair(pair);
+		const content = contentOf(slug, `for the text: ${text}`);
+		if (content !== undefined && content.includes(text)) {
+			failures.push(`The section "${slug}" must not contain: ${text}`);
+		}
+	}
+
+	for (const pair of spec.sectionImages ?? []) {
+		const [slug, count] = splitPair(pair);
+		const content = contentOf(slug, 'for the number of images');
+		const images = (content?.match(/<img\b[^>]*>/gv) ?? []).length;
+		if (content !== undefined && images !== Number(count)) {
+			failures.push(`Expected ${count} <img> in the section "${slug}", found ${images}`);
+		}
+	}
+
+	for (const {slug, content: expected} of spec.sectionEquals ?? []) {
+		const content = contentOf(slug, 'for equality');
+		if (content !== undefined && content !== expected) {
+			failures.push(`The section "${slug}" is not the same as before (it must be left untouched)`);
+		}
+	}
+}
+
+// What a call with comment-section must have left in the comment
+function checkSections(body, spec) {
+	if (!hasSectionSpec(spec)) {
+		return [];
+	}
+
+	const {sections, problems} = findSections(body, spec.tag);
+	const failures = [...problems];
+	if (spec.sections !== undefined) {
+		const found = sections.map(section => section.slug);
+		const expected = spec.sections.filter(Boolean);
+		if (found.join(',') !== expected.join(',')) {
+			failures.push(`Expected the sections [${expected.join(', ')}] in this order, found [${found.join(', ')}]`);
+		}
+	}
+
+	checkSectionContent(sections, spec, failures);
+	return failures;
+}
+
 // Accordions: used at all, none of them open
 function checkDetails(body, spec) {
 	const failures = [];
@@ -87,7 +199,7 @@ function checkText(body, spec) {
 /**
  Check the comments of one tag against an expectation.
  @param {{id: number, login: string, body: string}[]} comments All comments of the pull request.
- @param {object} spec tag; expectComments (default 1); expectId, notId; images, noImages; detailsClosed; sizedImages; contains[], notContains[].
+ @param {object} spec tag; expectComments (default 1); expectId, notId; images, noImages; detailsClosed; sizedImages; contains[], notContains[]; sections (the ordered slugs), sectionContains[], sectionNotContains[], sectionImages[] ("slug=text" or "slug=count") and sectionEquals[] ({slug, content}).
  @returns {{failures: string[], comment?: object, tagged: object[], images: number}} The failures (empty when all hold), the comment that was checked and how many images it embeds.
  */
 export function checkComments(comments, spec) {
@@ -118,6 +230,7 @@ export function checkComments(comments, spec) {
 		...checkDetails(body, spec),
 		...checkImages(imageTags, spec),
 		...checkText(body, spec),
+		...checkSections(body, spec),
 	);
 
 	return {
@@ -137,6 +250,12 @@ const OPTIONS = {
 	'sized-images': {type: 'boolean'},
 	contains: {type: 'string', multiple: true},
 	'not-contains': {type: 'string', multiple: true},
+	sections: {type: 'string'},
+	'section-contains': {type: 'string', multiple: true},
+	'section-not-contains': {type: 'string', multiple: true},
+	'section-images': {type: 'string', multiple: true},
+	'section-equals': {type: 'string', multiple: true},
+	'write-section': {type: 'string', multiple: true},
 	'write-body': {type: 'string'},
 	'write-id': {type: 'string'},
 	title: {type: 'string'},
@@ -188,6 +307,15 @@ function run(argv) {
 		sizedImages: values['sized-images'],
 		contains: values.contains,
 		notContains: values['not-contains'],
+		sections: values.sections === undefined ? undefined : values.sections.split(',').map(slug => slug.trim()),
+		sectionContains: values['section-contains'],
+		sectionNotContains: values['section-not-contains'],
+		sectionImages: values['section-images'],
+		// "slug=file": the section must be what an earlier --write-section put into the file
+		sectionEquals: (values['section-equals'] ?? []).map(pair => {
+			const [slug, file] = splitPair(pair);
+			return {slug, content: fs.readFileSync(file, 'utf8')};
+		}),
 	});
 
 	const title = values.title ?? `PR comment "${values.tag}"`;
@@ -199,6 +327,13 @@ function run(argv) {
 
 		if (values['write-id']) {
 			fs.writeFileSync(values['write-id'], String(result.comment.id));
+		}
+
+		// "slug=file": the content of one section, to compare with --section-equals later
+		for (const pair of values['write-section'] ?? []) {
+			const [slug, file] = splitPair(pair);
+			const section = findSections(result.comment.body, values.tag).sections.find(item => item.slug === slug);
+			fs.writeFileSync(file, section ? section.content : '');
 		}
 	}
 

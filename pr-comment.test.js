@@ -1,6 +1,6 @@
 /* eslint-disable camelcase -- the GitHub REST API uses snake_case */
 import {describe, expect, it} from 'vitest';
-import {commentMarker} from './comment.js';
+import {buildCommentBody, commentMarker} from './comment.js';
 import {
 	findPreviousComment,
 	publishComment,
@@ -176,6 +176,128 @@ describe('publishComment', () => {
 		expect(octokit.state.calls.at(-1)).toEqual(['update', {
 			owner: 'o', repo: 'r', comment_id: 2, body,
 		}]);
+	});
+
+	it('renders the body from the comment it edits, so a section can be merged into it', async () => {
+		const octokit = fakeOctokit({comments: [comment(1, 'unrelated'), comment(2, `${marker}\nold body`)]});
+		const seen = [];
+		const result = await publishComment(octokit, {
+			...target,
+			marker,
+			mode: 'update',
+			render(previousBody) {
+				seen.push(previousBody);
+				return `${marker}\nnew from ${previousBody}`;
+			},
+		});
+		expect(result).toEqual({action: 'updated', id: 2});
+		expect(seen).toEqual([`${marker}\nold body`]);
+		expect(octokit.state.comments[1].body).toBe(`${marker}\nnew from ${marker}\nold body`);
+	});
+
+	it('posts nothing when render answers null, for an edit and for a new comment', async () => {
+		const edit = fakeOctokit({comments: [comment(2, `${marker}\nold body`)]});
+		const edited = await publishComment(edit, {
+			...target, marker, mode: 'update', render: () => null,
+		});
+		expect(edited).toEqual({action: 'skipped'});
+		expect(edit.state.comments[0].body).toBe(`${marker}\nold body`);
+		expect(edit.state.calls.filter(call => ['update', 'create'].includes(call[0]))).toEqual([]);
+
+		const fresh = fakeOctokit();
+		const created = await publishComment(fresh, {
+			...target, marker, mode: 'update', render: () => null,
+		});
+		expect(created).toEqual({action: 'skipped'});
+		expect(fresh.state.comments).toEqual([]);
+	});
+
+	it('renders without a previous body when it creates the comment', async () => {
+		const octokit = fakeOctokit();
+		const seen = [];
+		const result = await publishComment(octokit, {
+			...target,
+			marker,
+			mode: 'update',
+			render(previousBody) {
+				seen.push(previousBody);
+				return body;
+			},
+		});
+		expect(result.action).toBe('created');
+		expect(seen).toEqual([undefined]);
+		expect(octokit.state.comments[0].body).toBe(body);
+	});
+
+	it('renders without a previous body in new mode, even when a comment with the marker exists', async () => {
+		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`)]});
+		const seen = [];
+		await publishComment(octokit, {
+			...target,
+			marker,
+			mode: 'new',
+			render(previousBody) {
+				seen.push(previousBody);
+				return body;
+			},
+		});
+		expect(seen).toEqual([undefined]);
+		expect(octokit.state.comments).toHaveLength(2);
+	});
+
+	it('renders again without the previous body when the edited comment is gone (404)', async () => {
+		const octokit = fakeOctokit({comments: [comment(2, `${marker}\nold`)], failUpdate: 404});
+		const seen = [];
+		const logs = [];
+		const result = await publishComment(octokit, {
+			...target,
+			marker,
+			mode: 'update',
+			log(message) {
+				logs.push(message);
+			},
+			render(previousBody) {
+				seen.push(previousBody);
+				return `${body}${previousBody ? 'merged' : 'fresh'}`;
+			},
+		});
+		expect(result.action).toBe('created');
+		expect(seen).toEqual([`${marker}\nold`, undefined]);
+		expect(octokit.state.comments.at(-1).body).toBe(`${body}fresh`);
+		expect(logs[0]).toContain('no longer exists');
+	});
+
+	it('merges two sections sequentially into one comment and keeps the first untouched', async () => {
+		const octokit = fakeOctokit();
+		const sectionOptions = (name, slug, uploads) => ({
+			...target,
+			marker,
+			mode: 'update',
+			render: previousBody => buildCommentBody(uploads, uploads.map(item => item.fileName), {section: {name, slug}, previousBody, tag: 'screenshots'}).body,
+		});
+		const upload = url => [{
+			fileName: 'desktopPage1440x900-abc1234.jpeg',
+			name: 'x',
+			url,
+			bytes: 1024,
+			width: 1440,
+			height: 900,
+		}];
+		const light = upload('https://x/light');
+		const dark = upload('https://x/dark');
+		await publishComment(octokit, sectionOptions('Light', 'light', light));
+		const afterFirst = octokit.state.comments[0].body;
+		const result = await publishComment(octokit, sectionOptions('Dark', 'dark', dark));
+		expect(result.action).toBe('updated');
+		expect(octokit.state.comments).toHaveLength(1);
+		const merged = octokit.state.comments[0].body;
+		expect(merged).toContain('https://x/light');
+		expect(merged).toContain('https://x/dark');
+		// The first section is the same text as before
+		const open = '<!-- screenshots-ci-action:screenshots:section:light -->';
+		const close = '<!-- /screenshots-ci-action:screenshots:section:light -->';
+		const firstSection = afterFirst.slice(afterFirst.indexOf(open), afterFirst.indexOf(close));
+		expect(merged).toContain(firstSection);
 	});
 
 	it('keeps exactly one comment when run twice', async () => {

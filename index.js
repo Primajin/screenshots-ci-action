@@ -457,20 +457,35 @@ async function uploadAndCommentImages(files, commentOptions) {
 				...commentOptions,
 				footer: commentOptions.footer ? buildFooter(pull_request) : null,
 			};
-			const {body, warnings} = buildCommentBody(uploaded, files, renderOptions);
-			for (const message of warnings) {
-				console.warn(message);
-			}
+			// Rendered when the earlier comment is known: a section is merged into
+			// its body, everything else is rendered as a whole. It runs again when the
+			// edit finds the comment gone, so a message is shown once.
+			const shown = new Set();
+			const render = previousBody => {
+				const {body, warnings, full} = buildCommentBody(uploaded, files, {...renderOptions, previousBody});
+				for (const message of new Set(warnings).difference(shown)) {
+					shown.add(message);
+					console.warn(message);
+				}
+
+				if (full) {
+					// GitHub would answer 422 and the section would silently never appear
+					core.warning(warnings.at(-1), {title: 'Comment is full'});
+					return null;
+				}
+
+				return body;
+			};
 
 			const result = await publishComment(octokit, {
 				owner,
 				repo,
 				issueNumber: pull_request.number,
-				body,
+				render,
 				marker: commentMarker(commentOptions.tag),
 				mode: commentOptions.mode,
 			});
-			console.log(`Comment ${result.action}:`, result.id);
+			console.log(result.action === 'skipped' ? 'Comment not posted, the images are uploaded to the release.' : `Comment ${result.action}:`, result.id ?? '');
 		} catch (error) {
 			console.error(error);
 		}

@@ -72,6 +72,13 @@ jobs:
       contents: read
     uses: ./.github/workflows/_pass_all-defaults.yml
 
+  pass-comment-section:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: ./.github/workflows/_pass_comment-section.yml
+
   pass-context-options:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -177,6 +184,7 @@ jobs:
       - fail-pre-script-timeout
       - fail-unknown-device
       - pass-all-defaults
+      - pass-comment-section
       - pass-context-options
       - pass-devices
       - pass-external-login-pre-script

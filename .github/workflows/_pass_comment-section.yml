@@ -1,0 +1,171 @@
+name: "Positive Test - comment sections"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  # The CI pre-release, see _pass_release-pr-comment.yml and README.ci.md
+  CI_RELEASE_ID: '415059795'
+  # The comment all calls of this scenario share
+  SECTION_TAG: section-test
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - three calls fill one comment with one section each, and a call replaces only its own section"
+    # The comment is edited in place by every call, so runs for one PR queue up
+    concurrency:
+      group: comment-section-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+      - name: Start from a clean comment (delete the comment of this scenario from an earlier run)
+        run: |
+          set -euo pipefail
+          # Only the Actions bot's comments that start with the marker of this scenario's tag
+          ids=$(gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"<!-- screenshots-ci-action:$SECTION_TAG -->\"))) | .id")
+          for id in $ids; do
+            echo "Deleting the comment $id of an earlier run"
+            gh api -X DELETE "repos/$GH_REPO/issues/comments/$id"
+          done
+
+      # 1. The first call creates the comment with its section
+      - name: Call 1, desktop light (section is open)
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          sizes: 1440x900
+          context-options: '{"colorScheme": "light", "reducedMotion": "reduce"}'
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: ${{ env.SECTION_TAG }}
+          comment-headline: Component showcase
+          comment-section: Desktop · light theme
+          comment-open: first
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert one comment with one open section and write it down
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "Section comment, call 1" --tag "$SECTION_TAG" --expect-comments 1 --images 1 \
+            --sections desktop-light-theme --section-images desktop-light-theme=1 \
+            --section-contains 'desktop-light-theme=<summary><b>Desktop · light theme</b>' \
+            --contains='### Component showcase' --contains='<details open>' \
+            --write-body "$RUNNER_TEMP/body-1.md" --write-id "$RUNNER_TEMP/comment-id" \
+            --write-section "desktop-light-theme=$RUNNER_TEMP/section-light-1.md"
+          echo "COMMENT_ID=$(cat "$RUNNER_TEMP/comment-id")" >> "$GITHUB_ENV"
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/body-1.md"
+
+      # 2. A second call adds its section after the first and leaves it alone
+      - name: Call 2, desktop dark
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          sizes: 1440x900
+          context-options: '{"colorScheme": "dark", "reducedMotion": "reduce"}'
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: ${{ env.SECTION_TAG }}
+          comment-headline: Component showcase
+          comment-section: Desktop · dark theme
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert the same comment now has two sections, the first one untouched
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "Section comment, call 2" --tag "$SECTION_TAG" --expect-comments 1 --expect-id "$COMMENT_ID" --images 2 \
+            --sections desktop-light-theme,desktop-dark-theme \
+            --section-equals "desktop-light-theme=$RUNNER_TEMP/section-light-1.md" \
+            --section-images desktop-dark-theme=1 \
+            --contains='### Component showcase' \
+            --write-section "desktop-dark-theme=$RUNNER_TEMP/section-dark-2.md" --write-body "$RUNNER_TEMP/body-2.md"
+          # Call 2 had no comment-open: first, but the section of call 1 stays open
+          grep -c '<details open>' "$RUNNER_TEMP/body-2.md" | grep -qx 1
+          # The frame (headline and footer) is shared: one footer, not one per section
+          [ "$(grep -c '<sub>Commit' "$RUNNER_TEMP/body-2.md")" -eq 1 ]
+
+      # 3. A third call, a mobile size, is added after the others
+      - name: Call 3, mobile light
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          sizes: 390x844@3:mobile
+          context-options: '{"colorScheme": "light", "reducedMotion": "reduce"}'
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: ${{ env.SECTION_TAG }}
+          comment-headline: Component showcase
+          comment-section: Mobile · light theme
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert three sections in the order of the calls, the first two untouched
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "Section comment, call 3" --tag "$SECTION_TAG" --expect-comments 1 --expect-id "$COMMENT_ID" --images 3 \
+            --sections desktop-light-theme,desktop-dark-theme,mobile-light-theme \
+            --section-equals "desktop-light-theme=$RUNNER_TEMP/section-light-1.md" \
+            --section-equals "desktop-dark-theme=$RUNNER_TEMP/section-dark-2.md" \
+            --section-images mobile-light-theme=1 \
+            --section-contains 'mobile-light-theme=Size 390 × 844 @3x, mobile' \
+            --write-section "mobile-light-theme=$RUNNER_TEMP/section-mobile-3.md" --write-body "$RUNNER_TEMP/body-3.md"
+          [ "$(grep -c '<sub>Commit' "$RUNNER_TEMP/body-3.md")" -eq 1 ]
+          bash .github/scripts/assert-image-url.sh "$RUNNER_TEMP/body-3.md"
+
+      # 4. The dark call again: it replaces its own section where it is
+      - name: Call 4, desktop dark again with a different scale factor
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          sizes: 1440x900
+          context-options: '{"colorScheme": "dark", "reducedMotion": "reduce", "deviceScaleFactor": 2}'
+          release-id: ${{ env.CI_RELEASE_ID }}
+          comment-tag: ${{ env.SECTION_TAG }}
+          comment-headline: Component showcase
+          comment-section: Desktop · dark theme
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Assert only the dark section changed and kept its place
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GH_REPO/issues/$PR_NUMBER/comments" --jq '.[] | {id, login: .user.login, body} | tojson' > "$RUNNER_TEMP/comments.jsonl"
+          node .github/scripts/assert-pr-comment.mjs --comments "$RUNNER_TEMP/comments.jsonl" \
+            --title "Section comment, call 4" --tag "$SECTION_TAG" --expect-comments 1 --expect-id "$COMMENT_ID" --images 3 \
+            --sections desktop-light-theme,desktop-dark-theme,mobile-light-theme \
+            --section-equals "desktop-light-theme=$RUNNER_TEMP/section-light-1.md" \
+            --section-equals "mobile-light-theme=$RUNNER_TEMP/section-mobile-3.md" \
+            --section-images desktop-dark-theme=1 \
+            --section-contains 'desktop-dark-theme=Size 1,440 × 900' \
+            --write-section "desktop-dark-theme=$RUNNER_TEMP/section-dark-4.md" --write-body "$RUNNER_TEMP/body-4.md"
+          # The new capture got new release assets, so the section is not what it was
+          if cmp -s "$RUNNER_TEMP/section-dark-2.md" "$RUNNER_TEMP/section-dark-4.md"; then
+            echo "::error::The dark section was not replaced"
+            exit 1
+          fi
+          echo "- Four calls with comment-section kept one comment ($COMMENT_ID) with three sections; a repeated call replaced only its own" >> "$GITHUB_STEP_SUMMARY"
+      - name: Assert every call uploaded only its own image
+        run: |
+          set -euo pipefail
+          # The timestamp that starts the asset names is per call: the 4th call (dark section) left exactly one asset with it
+          ts=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9.]+Z' "$RUNNER_TEMP/section-dark-4.md" | head -1)
+          [ -n "$ts" ] || { echo '::error::No upload timestamp in the section'; exit 1; }
+          count=$(gh api --paginate "repos/$GH_REPO/releases/$CI_RELEASE_ID/assets" --jq ".[] | select(.name | startswith(\"$ts-\")) | .name" | grep -c . || true)
+          echo "dark section: timestamp $ts, $count asset(s)"
+          [ "$count" -eq 1 ] || { echo "::error::Expected 1 release asset for the call, found $count"; exit 1; }

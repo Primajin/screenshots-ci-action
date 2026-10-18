@@ -4,9 +4,10 @@ import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import {describe, expect, it} from 'vitest';
-import {renderComment} from '../../comment.js';
+import {mergeSection, renderComment} from '../../comment.js';
 import {
 	checkComments,
+	findSections,
 	findTagged,
 	normalizeArgs,
 	parseComments,
@@ -197,5 +198,118 @@ describe('the command line', () => {
 		expect(result.status).toBe(1);
 		expect(result.stderr).toContain('::error title=My check::Expected 5 <img>');
 		expect(result.stderr).toContain('::error title=My check::The comment does not contain: nope');
+	});
+});
+
+describe('sections', () => {
+	const entryFor = (fileName, url) => ({
+		fileName, name: 'n', url, bytes: 2048, width: 1440, height: 900,
+	});
+	const sectionComment = (previousBody, name, slug, url) => renderComment(
+		[entryFor('desktopPage1440x900-abc1234.jpeg', url)],
+		['desktopPage1440x900-abc1234.jpeg'],
+		{section: {name, slug}, previousBody, footer: {sha: 'def5678aaaa'}},
+	);
+	const first = sectionComment(undefined, 'Desktop · light', 'desktop-light', 'https://x/light');
+	const second = sectionComment(first, 'Desktop · dark', 'desktop-dark', 'https://x/dark');
+	const third = sectionComment(second, 'Mobile · light', 'mobile-light', 'https://x/mobile');
+
+	it('finds the sections in the order they are in', () => {
+		const {sections, problems} = findSections(third, 'screenshots');
+		expect(problems).toEqual([]);
+		expect(sections.map(section => section.slug)).toEqual(['desktop-light', 'desktop-dark', 'mobile-light']);
+		expect(sections[1].content).toContain('https://x/dark');
+		expect(sections[1].content).not.toContain('https://x/light');
+		expect(sections[0].content.startsWith('<details>')).toBe(true);
+	});
+
+	it('finds none in a comment without sections, and none of another tag', () => {
+		expect(findSections(body, 'screenshots').sections).toEqual([]);
+		expect(findSections(third, 'other').sections).toEqual([]);
+	});
+
+	it('reports markers that are not balanced', () => {
+		const open = '<!-- screenshots-ci-action:screenshots:section:a -->';
+		const close = '<!-- /screenshots-ci-action:screenshots:section:a -->';
+		expect(findSections(`${open}\nx\n`, 'screenshots').problems).toEqual(['The section "a" is not closed']);
+		expect(findSections(`x\n${close}\n`, 'screenshots').problems[0]).toContain('has no matching start marker');
+		expect(findSections(`${open}\nx\n${open.replace(':a', ':b')}\ny\n`, 'screenshots').problems[0]).toContain('"a" is not closed before');
+	});
+
+	it('checks the ordered slugs', () => {
+		const ok = {tag: 'screenshots', sections: ['desktop-light', 'desktop-dark', 'mobile-light']};
+		expect(checkComments([comment(1, third)], ok).failures).toEqual([]);
+		expect(checkComments([comment(1, third)], {tag: 'screenshots', sections: ['desktop-dark', 'desktop-light', 'mobile-light']}).failures)
+			.toEqual(['Expected the sections [desktop-dark, desktop-light, mobile-light] in this order, found [desktop-light, desktop-dark, mobile-light]']);
+		expect(checkComments([comment(1, second)], ok).failures[0]).toContain('found [desktop-light, desktop-dark]');
+		expect(checkComments([comment(1, body)], {tag: 'screenshots', sections: []}).failures).toEqual([]);
+	});
+
+	it('checks the content and the images of one section', () => {
+		const spec = {
+			tag: 'screenshots',
+			sectionContains: ['desktop-dark=https://x/dark', 'desktop-dark=<summary><b>Desktop · dark</b>'],
+			sectionNotContains: ['desktop-dark=https://x/light'],
+			sectionImages: ['desktop-dark=1', 'mobile-light=1'],
+		};
+		expect(checkComments([comment(1, third)], spec).failures).toEqual([]);
+		const {failures} = checkComments([comment(1, third)], {
+			tag: 'screenshots',
+			sectionContains: ['desktop-dark=https://x/light', 'nope=x'],
+			sectionNotContains: ['desktop-dark=https://x/dark'],
+			sectionImages: ['desktop-dark=2'],
+		});
+		expect(failures).toEqual([
+			'The section "desktop-dark" does not contain: https://x/light',
+			'There is no section "nope" to check for the text: x',
+			'The section "desktop-dark" must not contain: https://x/dark',
+			'Expected 2 <img> in the section "desktop-dark", found 1',
+		]);
+	});
+
+	it('checks that a section is left untouched', () => {
+		const before = findSections(second, 'screenshots').sections.find(section => section.slug === 'desktop-dark').content;
+		const same = findSections(third, 'screenshots').sections.find(section => section.slug === 'desktop-dark').content;
+		expect(same).toBe(before);
+		expect(checkComments([comment(1, third)], {tag: 'screenshots', sectionEquals: [{slug: 'desktop-dark', content: before}]}).failures).toEqual([]);
+		const changed = sectionComment(third, 'Desktop · dark', 'desktop-dark', 'https://x/dark-new');
+		expect(checkComments([comment(1, changed)], {tag: 'screenshots', sectionEquals: [{slug: 'desktop-dark', content: before}]}).failures)
+			.toEqual(['The section "desktop-dark" is not the same as before (it must be left untouched)']);
+		const light = findSections(third, 'screenshots').sections[0].content;
+		expect(checkComments([comment(1, changed)], {tag: 'screenshots', sectionEquals: [{slug: 'desktop-light', content: light}]}).failures).toEqual([]);
+	});
+
+	it('fails unbalanced markers', () => {
+		const broken = mergeSection(undefined, 'screenshots', 'a', 'A', {headline: 'x'}).replace('<!-- /screenshots-ci-action:screenshots:section:a -->', '');
+		expect(checkComments([comment(1, broken)], {tag: 'screenshots', sections: ['a']}).failures[0]).toBe('The section "a" is not closed');
+	});
+
+	it('does not look at sections without a section option', () => {
+		expect(checkComments([comment(1, third)], {tag: 'screenshots'}).failures).toEqual([]);
+	});
+
+	it('is wired to the command line, with files to compare a section before and after', () => {
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'assert-sections-'));
+		const input = (text, id) => {
+			const file = path.join(directory, `c${id}.jsonl`);
+			fs.writeFileSync(file, JSON.stringify(comment(id, text)));
+			return file;
+		};
+
+		const run = (text, id, args) => spawnSync(process.execPath, [SCRIPT, '--comments', input(text, id), '--tag', 'screenshots', ...args], {
+			encoding: 'utf8',
+			env: {...process.env, GITHUB_STEP_SUMMARY: ''},
+		});
+		const written = path.join(directory, 'dark.md');
+		expect(run(second, 1, ['--sections', 'desktop-light,desktop-dark', '--write-section', `desktop-dark=${written}`]).status).toBe(0);
+		expect(fs.readFileSync(written, 'utf8')).toContain('https://x/dark');
+		const same = run(third, 2, ['--sections', 'desktop-light, desktop-dark, mobile-light', '--section-equals', `desktop-dark=${written}`, '--section-images', 'mobile-light=1', '--section-contains', 'mobile-light=https://x/mobile']);
+		expect(same.status, same.stderr).toBe(0);
+		const changed = run(sectionComment(third, 'Desktop · dark', 'desktop-dark', 'https://x/other'), 3, ['--section-equals', `desktop-dark=${written}`]);
+		expect(changed.status).toBe(1);
+		expect(changed.stderr).toContain('is not the same as before');
+		const wrongOrder = run(third, 4, ['--sections', 'mobile-light']);
+		expect(wrongOrder.status).toBe(1);
+		expect(wrongOrder.stderr).toContain('Expected the sections [mobile-light] in this order');
 	});
 });

@@ -13,6 +13,11 @@
 // - imageWidth: widest display width in CSS pixels; every <img> gets width and
 //   height from the known pixel size, so the page does not jump when the
 //   pictures load (0 = no width and height attributes)
+//
+// Sections: with a `section` ({name, slug}) the comment of the tag holds one
+// section per name and a call replaces only its own (mergeSection). The call
+// renders its captures as one group titled with the section name, between
+// hidden markers; the headline and the footer are shared by all sections.
 
 const PART = /^(?<before>.*)-part(?<part>\d+)(?<after>(?:-[^.]*)?\.[\dA-Za-z]+)$/v;
 const EXTENSION = /\.[\dA-Za-z]+$/v;
@@ -23,6 +28,7 @@ const DESKTOP = /^desktopPage(?<width>\d+)x\d+$/v;
 const CUSTOM_SIZE = /^size(?<width>\d+)x(?<height>\d+)(?:-(?<scale>\d+(?:\.\d+)?)x)?(?<mobile>-mobile)?$/v;
 
 const DEFAULT_OPTIONS = {
+	section: null,
 	layout: 'details',
 	open: 'none',
 	groupBy: 'capture',
@@ -36,6 +42,54 @@ const DEFAULT_OPTIONS = {
 // Hidden first line that lets the next run find (and edit) its earlier comment.
 function commentMarker(tag) {
 	return `<!-- screenshots-ci-action:${tag} -->`;
+}
+
+// The markers around a section; the slug is made of letters, digits and dashes
+// only (see comment-options.js), so it is safe inside an HTML comment.
+function sectionMarkers(tag, slug) {
+	return {
+		start: `<!-- screenshots-ci-action:${tag}:section:${slug} -->`,
+		end: `<!-- /screenshots-ci-action:${tag}:section:${slug} -->`,
+	};
+}
+
+const SLUG = /^[\p{Letter}\p{Number}\-]+$/v;
+
+// The sections of an earlier comment of the tag, in the order they are in:
+// [{slug, content}]. A start marker without its end marker, or with a slug that
+// is not one, is not a section (the text around sections is not kept), and of
+// two sections with the same slug only the first is kept.
+function parseSections(body, tag) {
+	const sections = [];
+	const prefix = `<!-- screenshots-ci-action:${tag}:section:`;
+	let from = 0;
+	for (;;) {
+		const start = body.indexOf(prefix, from);
+		if (start === -1) {
+			return sections;
+		}
+
+		const close = body.indexOf(' -->', start + prefix.length);
+		if (close === -1) {
+			return sections;
+		}
+
+		const slug = body.slice(start + prefix.length, close);
+		const contentStart = close + ' -->'.length;
+		const {end: endMarker} = sectionMarkers(tag, slug);
+		const end = SLUG.test(slug) ? body.indexOf(endMarker, contentStart) : -1;
+		if (end === -1) {
+			from = contentStart;
+			continue;
+		}
+
+		// A slug twice (a comment that was edited by hand): the first one counts
+		if (sections.every(section => section.slug !== slug)) {
+			sections.push({slug, content: body.slice(contentStart, end).trim()});
+		}
+
+		from = end + endMarker.length;
+	}
 }
 
 const escapeHtml = value =>
@@ -362,11 +416,76 @@ function renderWarnings(captures, lost, groupBy) {
 		: '';
 }
 
+// The group of a section: one <details> (or heading, or link line) titled with the
+// section name. A single capture keeps its own summary (size, parts, failed
+// parts), several are combined like comment-group-by all.
+function sectionGroup(captures, section) {
+	const [group] = buildGroups(captures, captures.length === 1 ? 'capture' : 'all');
+	return {...group, title: section.name};
+}
+
+// What a call puts between its markers: the group and what went wrong
+function renderSectionContent(captures, lost, settings) {
+	const group = renderGroup(sectionGroup(captures, settings.section), 0, settings);
+	return [
+		// A bullet list needs no trailing blank line per item, close it once
+		settings.layout === 'links' ? `${group}\n` : group,
+		settings.omitted > 0
+			? `…and ${settings.omitted} more image${settings.omitted === 1 ? '' : 's'} not shown, see the release assets.\n\n`
+			: '',
+		renderWarnings(captures, lost, captures.length === 1 ? 'capture' : 'all'),
+	].join('');
+}
+
+/**
+ Put one section into the comment of a tag: replace the section of the same slug
+ where it is, or add it after the others (the order is the order of first
+ insertion), and leave every other section as it was. The headline and the
+ footer are the frame of the comment and always come from the given frame; text
+ of the previous body outside of the sections is not kept.
+ @param {string | undefined} previousBody The body of the earlier comment of the tag (empty or undefined for none).
+ @param {string} tag The tag of the comment (the comment-tag input).
+ @param {string} slug The slug of the section (letters, digits and dashes).
+ @param {string} sectionMarkdown What goes between the markers of the section (a group of the comment).
+ @param {{headline: string, footer?: string}} frame The headline (plain text) and the rendered footer, if any.
+ @returns {string} The new body, starting with the marker line of the tag.
+ */
+// eslint-disable-next-line max-params -- the five pieces of a merge, in the order of the section markers
+function mergeSection(previousBody, tag, slug, sectionMarkdown, frame) {
+	const sections = typeof previousBody === 'string' ? parseSections(previousBody, tag) : [];
+	const next = {slug, content: sectionMarkdown.trim()};
+	const index = sections.findIndex(section => section.slug === slug);
+	if (index === -1) {
+		sections.push(next);
+	} else {
+		sections[index] = next;
+	}
+
+	const blocks = sections.map(section => {
+		const {start, end} = sectionMarkers(tag, section.slug);
+		return `${start}\n${section.content}\n${end}\n\n`;
+	});
+	return [
+		`${commentMarker(tag)}\n`,
+		`### ${escapeHtml(frame.headline)}\n\n`,
+		...blocks,
+		frame.footer ?? '',
+	].join('');
+}
+
+// The comment of a section call, merged into the previous body
+function frameSection(content, settings) {
+	return mergeSection(settings.previousBody, settings.tag, settings.section.slug, content, {
+		headline: settings.headline,
+		footer: renderFooter(settings.footer),
+	});
+}
+
 /**
  Render the PR comment.
  @param {{fileName: string, name: string, url: string, bytes: number, width?: number, height?: number}[]} uploaded The uploaded images (fileName is the local file name).
  @param {string[]} allFiles Every local file name, so failed parts are known.
- @param {object} [options] layout, open, groupBy, imageWidth, imageHeight, headline, tag, footer ({sha, runUrl} or null) and omitted (a count shown as "...and N more").
+ @param {object} [options] layout, open, groupBy, imageWidth, imageHeight, headline, tag, footer ({sha, runUrl} or null), omitted (a count shown as "...and N more"), section ({name, slug}: render only this call's section into previousBody, the body of the earlier comment of the tag) and previousBody.
  @returns {string} The markdown, starting with the hidden marker line; empty when nothing was uploaded.
  */
 function renderComment(uploaded, allFiles, options = {}) {
@@ -376,8 +495,12 @@ function renderComment(uploaded, allFiles, options = {}) {
 		return '';
 	}
 
-	const groups = buildGroups(captures, settings.groupBy);
 	const lost = findLostCaptures(captures, allFiles);
+	if (settings.section) {
+		return frameSection(renderSectionContent(captures, lost, settings), settings);
+	}
+
+	const groups = buildGroups(captures, settings.groupBy);
 	const list = groups.map((group, index) => renderGroup(group, index, settings));
 	return [
 		`${commentMarker(settings.tag)}\n`,
@@ -398,12 +521,14 @@ const MAX_COMMENT_LENGTH = 65_000;
 /**
  Render the comment so that it fits what GitHub accepts: when the body is too
  long it is rendered as links only, and when even that is too long the list is
- cut with "...and N more", so createComment never fails on the length.
+ cut with "...and N more", so createComment never fails on the length. With a
+ section only this section is degraded, the other sections of the previous body
+ stay as they are.
  @param {object[]} uploaded The uploaded images.
  @param {string[]} allFiles Every local file name.
- @param {object} options The render options.
+ @param {object} options The render options (see renderComment, with section and previousBody).
  @param {number} [limit] Longest body in characters.
- @returns {{body: string, warnings: string[]}} The body (empty when nothing was uploaded) and what to tell the user.
+ @returns {{body: string, warnings: string[], full?: boolean}} The body (empty when nothing was uploaded) and what to tell the user. `full` is true, and the body empty, when a section cannot be added even as a note because the other sections take the room: the comment must not be posted then, GitHub would refuse it.
  */
 function buildCommentBody(uploaded, allFiles, options, limit = MAX_COMMENT_LENGTH) {
 	const body = renderComment(uploaded, allFiles, options);
@@ -412,16 +537,17 @@ function buildCommentBody(uploaded, allFiles, options, limit = MAX_COMMENT_LENGT
 	}
 
 	const warnings = [];
+	const what = options.section ? `The section "${options.section.name}" makes the comment` : 'The comment has';
 	if (options.layout !== 'links') {
 		const links = renderComment(uploaded, allFiles, {...options, layout: 'links'});
-		warnings.push(`The comment has ${body.length} characters, more than GitHub allows; posting only links instead of the images.`);
+		warnings.push(`${what} ${body.length} characters, more than GitHub allows; posting only links instead of the images${options.section ? ' for this section' : ''}.`);
 		if (links.length <= limit) {
 			return {body: links, warnings};
 		}
 	}
 
 	const cut = shortenLinks(uploaded, allFiles, options, limit);
-	return {body: cut.body, warnings: [...warnings, ...cut.warnings]};
+	return {...cut, warnings: [...warnings, ...cut.warnings]};
 }
 
 // Links layout, with as many images as fit
@@ -448,12 +574,30 @@ function shortenLinks(uploaded, allFiles, options, limit) {
 		}
 	}
 
+	const warnings = [`The links alone are more than GitHub allows; ${uploaded.length - low} of ${uploaded.length} images are not listed.`];
 	// Nothing fits only with an absurd headline or url: cut the text itself
 	const fitted = render(Math.max(low, 1));
-	return {
-		body: fitted.slice(0, limit),
-		warnings: [`The links alone are more than GitHub allows; ${uploaded.length - low} of ${uploaded.length} images are not listed.`],
-	};
+	if (options.section && fitted.length > limit) {
+		// Cutting the body would break the markers of the other sections: this
+		// section is only a note
+		const note = `…${uploaded.length} image${uploaded.length === 1 ? '' : 's'} not listed, see the release assets.`;
+		const body = frameSection(note, {...DEFAULT_OPTIONS, ...options});
+		if (body.length > limit) {
+			// The other sections take the room even the note needs: nothing is posted
+			return {
+				body: '',
+				full: true,
+				warnings: [
+					...warnings,
+					`The comment is full: the section "${options.section.name}" could not be added, not even as a note. Shorten the other sections or use a different comment-tag.`,
+				],
+			};
+		}
+
+		return {body, warnings: [...warnings, `The section "${options.section.name}" was replaced by a note: even its links do not fit.`]};
+	}
+
+	return {body: fitted.slice(0, limit), warnings};
 }
 
 export {
@@ -465,6 +609,7 @@ export {
 	commentMarker,
 	displaySize,
 	formatBytes,
+	mergeSection,
 	parseFileName,
 	renderComment,
 };
