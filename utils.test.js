@@ -8,9 +8,12 @@ import {
 	mapWaitUntil,
 	describeWaitUntil,
 	normalizeScreenshotType,
+	parseSizes,
 	resolveContextOptions,
 	resolveDesktopViewports,
 	resolveDevices,
+	sizeContextOptions,
+	sizeFileBase,
 } from './utils.js';
 
 const DEVICES = [
@@ -431,5 +434,209 @@ describe('describeWaitUntil', () => {
 
 	it('is silent for Playwright values', () => {
 		expect(describeWaitUntil('load', mapWaitUntil('load'))).toEqual({warning: undefined, notice: undefined});
+	});
+});
+
+describe('parseSizes', () => {
+	const size = (width, height, scale = 1, isMobile = false) => ({
+		width, height, scale, mobile: isMobile,
+	});
+
+	it('is empty for an empty input', () => {
+		for (const raw of ['', ' \t ', undefined, null, ',', ' , ,, ']) {
+			expect(parseSizes(raw), String(raw)).toEqual([]);
+		}
+	});
+
+	it('parses every form of an entry', () => {
+		expect(parseSizes('1440x900')).toEqual([size(1440, 900)]);
+		expect(parseSizes('1440x900@2')).toEqual([size(1440, 900, 2)]);
+		expect(parseSizes('390x844:mobile')).toEqual([size(390, 844, 1, true)]);
+		expect(parseSizes('390x844@3:mobile')).toEqual([size(390, 844, 3, true)]);
+		expect(parseSizes('800x600@1.5')).toEqual([size(800, 600, 1.5)]);
+		expect(parseSizes('800x600@2.75:mobile')).toEqual([size(800, 600, 2.75, true)]);
+	});
+
+	it('parses a list in the order it is written', () => {
+		expect(parseSizes('1440x900,390x844@3:mobile,1920x1080@2')).toEqual([size(1440, 900), size(390, 844, 3, true), size(1920, 1080, 2)]);
+	});
+
+	it('ignores whitespace around entries and empty entries', () => {
+		expect(parseSizes('  1440x900 ,\t390x844@3:mobile\n, ')).toEqual([size(1440, 900), size(390, 844, 3, true)]);
+		expect(parseSizes('1440x900,')).toEqual([size(1440, 900)]);
+		expect(parseSizes(',1440x900,,390x844')).toEqual([size(1440, 900), size(390, 844)]);
+	});
+
+	it('accepts an upper case x and :Mobile', () => {
+		expect(parseSizes('1440X900@2:MOBILE')).toEqual([size(1440, 900, 2, true)]);
+		expect(parseSizes('390x844:Mobile')).toEqual([size(390, 844, 1, true)]);
+	});
+
+	it('normalises numbers: leading zeros and trailing decimals', () => {
+		expect(parseSizes('01440x0900@2.0')).toEqual([size(1440, 900, 2)]);
+		expect(parseSizes('800x600@1.50')).toEqual([size(800, 600, 1.5)]);
+	});
+
+	it('captures entries that are the same after normalising once, keeping the first position', () => {
+		expect(parseSizes('1440x900,390x844,1440x900')).toEqual([size(1440, 900), size(390, 844)]);
+		expect(parseSizes('1440x900@1,1440X900,1440x900@1.0')).toEqual([size(1440, 900)]);
+		expect(parseSizes('390x844:mobile,390x844:MOBILE')).toEqual([size(390, 844, 1, true)]);
+	});
+
+	it('keeps entries apart that differ in the scale or in mobile', () => {
+		expect(parseSizes('1440x900,1440x900@2,1440x900:mobile,1440x900@2:mobile')).toHaveLength(4);
+	});
+
+	it('accepts the limits of width and height', () => {
+		expect(parseSizes('1x1,10000x10000')).toEqual([size(1, 1), size(10_000, 10_000)]);
+	});
+
+	it('accepts the limits of the scale', () => {
+		expect(parseSizes('100x100@5')).toEqual([size(100, 100, 5)]);
+		expect(parseSizes('100x100@0.1')).toEqual([size(100, 100, 0.1)]);
+	});
+
+	it('fails for width or height out of the range', () => {
+		for (const entry of ['0x900', '1440x0', '10001x900', '1440x10001', '00x00', '99999x1']) {
+			expect(() => parseSizes(entry), entry).toThrow(`"${entry}": width and height must be whole numbers from 1 to 10000`);
+		}
+	});
+
+	it('fails for a scale below 0.1 or above 5', () => {
+		for (const entry of ['1440x900@0', '1440x900@0.0', '1440x900@0.09', '1440x900@0.01', '1440x900@5.01', '1440x900@6', '1440x900@100:mobile']) {
+			expect(() => parseSizes(entry), entry).toThrow(`"${entry}": the scale must be a number from 0.1 to 5`);
+		}
+	});
+
+	it('fails for every kind of malformed entry, naming it and the grammar', () => {
+		const malformed = [
+			'1440',
+			'1440x',
+			'x900',
+			'1440*900',
+			'1440 x 900',
+			'1440x900@',
+			'1440x900@x',
+			'1440x900@.5',
+			'1440x900@2.',
+			'1440x900@-2',
+			'1440x900@2@3',
+			'-1440x900',
+			'+1440x900',
+			'1.5x900',
+			'1440x900.5',
+			'1e3x900',
+			'1440x900:',
+			'1440x900:desktop',
+			'1440x900:mobile:mobile',
+			'mobile',
+			'iPhone 13',
+			'1440x900x2',
+			'0x1440x900',
+			'１４４０x900',
+		];
+		for (const entry of malformed) {
+			const attempt = () => parseSizes(entry);
+			expect(attempt, entry).toThrow('does not match WIDTHxHEIGHT[@SCALE][:mobile]');
+			expect(attempt, entry).toThrow('for example 1440x900, 1440x900@2, 390x844@3:mobile');
+		}
+	});
+
+	it('lists every invalid entry, not only the first', () => {
+		let message;
+		try {
+			parseSizes('1440x900, 1440*900, 0x10, 390x844@9, 390x844:mobile');
+		} catch (error) {
+			({message} = error);
+		}
+
+		expect(message).toContain('sizes has invalid entries');
+		expect(message).toContain('- "1440*900": does not match');
+		expect(message).toContain('- "0x10": width and height must be');
+		expect(message).toContain('- "390x844@9": the scale must be');
+		expect(message).not.toContain('1440x900"');
+		expect(message).not.toContain('"390x844:mobile"');
+	});
+
+	it('says "an invalid entry" for one', () => {
+		expect(() => parseSizes('big')).toThrow('sizes has an invalid entry; each entry must look like WIDTHxHEIGHT[@SCALE][:mobile]');
+		// The examples end with a full stop, not with a colon that reads as part of the last one
+		expect(() => parseSizes('big')).toThrow('390x844@3:mobile. Not valid:\n- "big"');
+	});
+
+	it('fails the whole input when one entry is invalid, instead of skipping it', () => {
+		expect(() => parseSizes('1440x900,oops')).toThrow('"oops"');
+	});
+});
+
+describe('sizeFileBase', () => {
+	it('is size<W>x<H>, with the scale and mobile only when they are not the defaults', () => {
+		expect(sizeFileBase({
+			width: 1440, height: 900, scale: 1, mobile: false,
+		})).toBe('size1440x900');
+		expect(sizeFileBase({
+			width: 1440, height: 900, scale: 2, mobile: false,
+		})).toBe('size1440x900-2x');
+		expect(sizeFileBase({
+			width: 390, height: 844, scale: 3, mobile: true,
+		})).toBe('size390x844-3x-mobile');
+		expect(sizeFileBase({
+			width: 390, height: 844, scale: 1, mobile: true,
+		})).toBe('size390x844-mobile');
+		expect(sizeFileBase({
+			width: 800, height: 600, scale: 1.5, mobile: false,
+		})).toBe('size800x600-1.5x');
+	});
+
+	it('is safe in file names and URLs for every parsed size', () => {
+		for (const entry of parseSizes('1x1,1440x900@2.75:mobile,10000x10000@5,390x844@0.5')) {
+			expect(sizeFileBase(entry)).toMatch(/^size\d+x\d+(?:-[\d.]+x)?(?:-mobile)?$/v);
+		}
+	});
+
+	it('gives different sizes different names', () => {
+		const names = parseSizes('1440x900,1440x900@2,1440x900:mobile,1440x900@2:mobile,900x1440').map(entry => sizeFileBase(entry));
+		expect(new Set(names).size).toBe(names.length);
+	});
+});
+
+describe('sizeContextOptions', () => {
+	it('is the viewport and the scale factor', () => {
+		expect(sizeContextOptions({
+			width: 1440, height: 900, scale: 2, mobile: false,
+		})).toEqual({viewport: {width: 1440, height: 900}, deviceScaleFactor: 2});
+	});
+
+	it('adds isMobile and hasTouch only for mobile', () => {
+		expect(sizeContextOptions({
+			width: 390, height: 844, scale: 3, mobile: true,
+		})).toEqual({
+			viewport: {width: 390, height: 844}, deviceScaleFactor: 3, isMobile: true, hasTouch: true,
+		});
+		expect('isMobile' in sizeContextOptions({
+			width: 1, height: 1, scale: 1, mobile: false,
+		})).toBe(false);
+	});
+
+	it('wins over the context-options of the call when merged on top of them', () => {
+		const merged = buildContextOptions({}, undefined, {
+			colorScheme: 'dark',
+			viewport: {width: 1, height: 1},
+			deviceScaleFactor: 9,
+			...sizeContextOptions({
+				width: 390, height: 844, scale: 3, mobile: false,
+			}),
+		});
+		expect(merged).toEqual({colorScheme: 'dark', viewport: {width: 390, height: 844}, deviceScaleFactor: 3});
+	});
+
+	it('leaves isMobile of the context-options alone for a size that is not mobile', () => {
+		const merged = buildContextOptions({}, undefined, {
+			isMobile: true,
+			...sizeContextOptions({
+				width: 390, height: 844, scale: 1, mobile: false,
+			}),
+		});
+		expect(merged.isMobile).toBe(true);
 	});
 });

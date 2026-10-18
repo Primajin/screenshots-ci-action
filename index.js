@@ -20,9 +20,12 @@ import {
 	formatInvalidDevicesError,
 	mapWaitUntil,
 	normalizeScreenshotType,
+	parseSizes,
 	resolveContextOptions,
 	resolveDesktopViewports,
 	resolveDevices,
+	sizeContextOptions,
+	sizeFileBase,
 } from './utils.js';
 
 const DEFAULT_DESKTOP_VIEWPOINT_RATIO = [
@@ -67,103 +70,279 @@ async function waitForConfiguredSelector(page, selector, options) {
 	}
 }
 
-async function run() {
+// The sizes input: {customSizes}, or {customSizes: [], sizesError} with the message
+// of what is wrong, so that it is reported together with the devices
+function readSizes(input) {
 	try {
-		// 1. Get User config
+		return {customSizes: parseSizes(input)};
+	} catch (error) {
+		return {customSizes: [], sizesError: error.message};
+	}
+}
 
-		const url = core.getInput('url');
-		const devicesInput = core.getInput('devices');
-		const isNoDesktop = core.getInput('no-desktop') === 'true';
-		const isFullPage = core.getInput('full-page') === 'true';
+// 1. Get the user's config: every input, resolved and validated
+function readConfig() {
+	const maxImage = resolveMaxImageHeight(core.getInput('max-image-height'));
+	if (maxImage.warning) {
+		console.warn(maxImage.warning);
+	}
+
+	// Playwright values plus legacy Puppeteer values (networkidle0/2).
+	const waitUntilInput = core.getInput('wait-until');
+	const waitUntilResult = mapWaitUntil(waitUntilInput);
+	const {warning, notice} = describeWaitUntil(waitUntilInput, waitUntilResult);
+	if (warning) {
+		console.warn(warning);
+	}
+
+	if (notice) {
+		console.log(notice);
+	}
+
+	// How the PR comment looks and where it goes (see "PR comments" in the README)
+	const {options: commentOptions, warnings: commentWarnings} = resolveCommentOptions(core.getInput);
+	for (const message of commentWarnings) {
+		console.warn(message);
+	}
+
+	return {
+		url: core.getInput('url'),
+		devicesInput: core.getInput('devices'),
+		isNoDesktop: core.getInput('no-desktop') === 'true',
+		isFullPage: core.getInput('full-page') === 'true',
 		// Only matters for full page captures; on unless explicitly switched off.
-		const isScrollBeforeCapture = isScrollEnabled(core.getInput('scroll-before-capture'));
-		const maxImage = resolveMaxImageHeight(core.getInput('max-image-height'));
-		if (maxImage.warning) {
-			console.warn(maxImage.warning);
-		}
-
-		const maxImageHeight = maxImage.value;
-		const isNoCommitHashFileName
-			= core.getInput('no-commit-hash-file-name') === 'true';
-
-		const screenshotType = normalizeScreenshotType(core.getInput('type'), DEFAULT_TYPE);
-
-		// Playwright values plus legacy Puppeteer values (networkidle0/2).
-		const waitUntilInput = core.getInput('wait-until');
-		const waitUntilResult = mapWaitUntil(waitUntilInput);
-		const {value: waitUntil} = waitUntilResult;
-		const {warning, notice} = describeWaitUntil(waitUntilInput, waitUntilResult);
-		if (warning) {
-			console.warn(warning);
-		}
-
-		if (notice) {
-			console.log(notice);
-		}
-
-		const waitForSelector
-			= core.getInput('wait-for-selector') || DEFAULT_WAIT_FOR_SELECTOR;
-
+		isScrollBeforeCapture: isScrollEnabled(core.getInput('scroll-before-capture')),
+		maxImageHeight: maxImage.value,
+		isNoCommitHashFileName: core.getInput('no-commit-hash-file-name') === 'true',
+		screenshotType: normalizeScreenshotType(core.getInput('type'), DEFAULT_TYPE),
+		waitUntil: waitUntilResult.value,
+		waitForSelector: core.getInput('wait-for-selector') || DEFAULT_WAIT_FOR_SELECTOR,
 		// Hidden / visible selector options default to false
-		const isWaitForSelectorHidden
-			= core.getInput('wait-for-selector-hidden').toLowerCase() === 'true';
-		const isWaitForSelectorVisible
-			= core.getInput('wait-for-selector-visible').toLowerCase() === 'true';
-		const waitForSelectorOptions = buildSelectorWaitOptions({
-			visible: isWaitForSelectorVisible,
-			hidden: isWaitForSelectorHidden,
+		waitForSelectorOptions: buildSelectorWaitOptions({
+			visible: core.getInput('wait-for-selector-visible').toLowerCase() === 'true',
+			hidden: core.getInput('wait-for-selector-hidden').toLowerCase() === 'true',
 			timeout: core.getInput('wait-for-selector-timeout'),
-		});
-
+		}),
 		// Playwright context options for every capture; an invalid value fails the
 		// run here, before a browser is started
-		const contextOverrides = resolveContextOptions(core.getInput('context-options'));
+		contextOverrides: resolveContextOptions(core.getInput('context-options')),
+		// Custom sizes (WIDTHxHEIGHT[@SCALE][:mobile]); an invalid entry fails the run
+		// in verifyConfig, together with unknown devices
+		...readSizes(core.getInput('sizes')),
+		commentOptions,
+	};
+}
 
-		// How the PR comment looks and where it goes (see "PR comments" in the README)
-		const {options: commentOptions, warnings: commentWarnings} = resolveCommentOptions(core.getInput);
-		for (const message of commentWarnings) {
-			console.warn(message);
-		}
+function logConfig(config) {
+	core.startGroup('Action config');
+	console.log('Input args:', {
+		url: config.url,
+		noDesktop: config.isNoDesktop,
+		devices: config.devicesInput,
+		sizes: config.customSizes,
+		fullPage: config.isFullPage,
+		scrollBeforeCapture: config.isScrollBeforeCapture,
+		maxImageHeight: config.maxImageHeight,
+		type: config.screenshotType,
+		waitUntil: config.waitUntil,
+		waitForSelector: config.waitForSelector,
+		waitForSelectorOptions: config.waitForSelectorOptions,
+		contextOptions: config.contextOverrides,
+		comment: config.commentOptions,
+	});
+	core.endGroup(); // Action config
+}
 
-		core.startGroup('Action config');
-		console.log('Input args:', {
+// 3b. Optional pre-script (login, cookie banner, ...). It runs once on a base
+// context; the resulting cookies/localStorage are copied into every desktop,
+// size and device context. Capture always starts after the pre-script
+// returned, so startCapture() is a documented no-op. Resolves to the session
+// state, or undefined without a pre-script.
+async function runConfiguredPreScript(url) {
+	if (!process.env.PRE_SCRIPT_PATH) {
+		return undefined;
+	}
+
+	let storageState;
+	core.startGroup('Pre-script');
+	const baseContext = await browser.newContext();
+	try {
+		const basePage = await baseContext.newPage();
+		await runPreScript({
+			browser,
+			context: baseContext,
+			page: basePage,
 			url,
-			noDesktop: isNoDesktop,
-			devices: devicesInput,
-			fullPage: isFullPage,
-			scrollBeforeCapture: isScrollBeforeCapture,
-			maxImageHeight,
-			type: screenshotType,
-			waitUntil,
-			waitForSelector,
-			waitForSelectorOptions,
-			contextOptions: contextOverrides,
-			comment: commentOptions,
 		});
-		core.endGroup(); // Action config
+		storageState = await baseContext.storageState();
+	} finally {
+		await baseContext.close().catch(() => {});
+		core.endGroup(); // Pre-script
+	}
 
-		// 2. Verify User config
+	console.log(
+		'Pre-script finished, session state is reused for all screenshots.',
+	);
+	return storageState;
+}
 
-		if (!url) {
-			console.log(['Task done', '- "url" is empty.'].join('\n'));
-			return;
-		}
+// The options of takeScreenshot that every capture shares
+const screenshotOptions = (config, pathFor) => ({
+	pathFor,
+	maxImageHeight: config.maxImageHeight,
+	fullPage: config.isFullPage,
+	type: config.screenshotType,
+	scrollBeforeCapture: config.isScrollBeforeCapture,
+	waitUntil: config.waitUntil,
+	log: console.log,
+});
 
-		const {valid: includedDevices, invalid: invalidDevices} = resolveDevices(
-			devicesInput,
-			deviceNames,
+// Filename with/without post fix commit hash name; a very tall page is split
+// into -part1, -part2, ... inserted before that suffix
+const pathForBase = (config, base) => part =>
+	config.isNoCommitHashFileName
+		? `${PATH}${base}${part}.${config.screenshotType}`
+		: `${PATH}${base}${part}-${POST_FIX}.${config.screenshotType}`;
+
+// Open the page and wait for the configured selector, if any
+async function openPage(page, config) {
+	await page.goto(config.url, {waitUntil: config.waitUntil});
+	// Wait for page element when config has element selector
+	await waitForConfiguredSelector(
+		page,
+		config.waitForSelector,
+		config.waitForSelectorOptions,
+	);
+}
+
+// 4. Take desktop screenshots: one context, the page is resized for every size
+async function captureDesktop(config, storageState) {
+	core.startGroup('start process desktop');
+	console.log('Processing desktop screenshot');
+
+	// The 7 fixed sizes, or only the viewport of the context-options
+	const desktopSizes = resolveDesktopViewports(DEFAULT_DESKTOP_VIEWPOINT_RATIO, config.contextOverrides);
+	if (config.contextOverrides.viewport) {
+		const {width, height} = config.contextOverrides.viewport;
+		console.log(`context-options sets a viewport: capturing only ${width}x${height} instead of the ${DEFAULT_DESKTOP_VIEWPOINT_RATIO.length} desktop sizes.`);
+	}
+
+	const desktopContext = await browser.newContext(
+		buildContextOptions(
+			{viewport: desktopSizes[0]},
+			storageState,
+			config.contextOverrides,
+		),
+	);
+	const desktopPage = await desktopContext.newPage();
+	await openPage(desktopPage, config);
+
+	for (const {width, height} of desktopSizes) {
+		await desktopPage.setViewportSize({width, height});
+		const options = screenshotOptions(config, pathForBase(config, `desktopPage${width}x${height}`));
+		runFiles.add(await takeScreenshot(desktopPage, options));
+	}
+
+	await desktopContext.close();
+	core.endGroup(); // End start process desktop
+}
+
+// A capture in a context of its own: `contextOptions` are the device descriptor
+// or the custom size (with the context-options), `base` is the file name
+// without part, commit hash and extension.
+async function captureInNewContext(config, contextOptions, base) {
+	const context = await browser.newContext(contextOptions);
+	const page = await context.newPage();
+	await openPage(page, config);
+	const options = screenshotOptions(config, pathForBase(config, base));
+	runFiles.add(await takeScreenshot(page, options));
+	await context.close();
+}
+
+// 5. Take the custom size screenshots
+async function captureCustomSizes(config, storageState) {
+	core.startGroup('start process custom sizes');
+	console.log('Processing custom sizes screenshot');
+
+	for (const size of config.customSizes) {
+		// No device descriptor: Chromium's own user agent unless the size is
+		// :mobile. The size wins over the viewport and scale factor of the
+		// context-options, everything else of them applies.
+		await captureInNewContext(
+			config,
+			buildContextOptions({}, storageState, {...config.contextOverrides, ...sizeContextOptions(size)}),
+			sizeFileBase(size),
 		);
-		if (invalidDevices.length > 0) {
-			throw new Error(formatInvalidDevicesError(invalidDevices));
-		}
+	}
 
-		if (isNoDesktop && includedDevices.length === 0) {
-			console.log(
-				[
-					'Task done',
-					'- No desktop and and devices are selected. You have chose at least one desktop or device.',
-				].join('\n'),
-			);
+	core.endGroup(); // End start process custom sizes
+}
+
+// 6. Take mobile device screenshots
+async function captureDevices(config, includedDevices, storageState) {
+	core.startGroup('start process mobile devices');
+	console.log('Processing mobile devices screenshot');
+
+	for (const deviceName of includedDevices) {
+		// Every device gets its own context built from Playwright's descriptor
+		// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch); the
+		// context-options win over it.
+		await captureInNewContext(
+			config,
+			buildContextOptions(devices[deviceName], storageState, config.contextOverrides),
+			deviceName.replaceAll(' ', '_'),
+		);
+	}
+
+	core.endGroup(); // End start process mobile devices
+}
+
+// 2. Verify the config. Resolves to the devices to capture, or undefined when
+// there is nothing to do.
+function verifyConfig(config) {
+	const {valid: includedDevices, invalid: invalidDevices} = resolveDevices(
+		config.devicesInput,
+		deviceNames,
+	);
+	// Everything that is wrong with the sizes and the devices is reported at once; an
+	// empty url ends the run before the devices are looked at (but not the sizes)
+	const errors = [
+		config.sizesError,
+		config.url && invalidDevices.length > 0 ? formatInvalidDevicesError(invalidDevices) : undefined,
+	].filter(Boolean);
+	if (errors.length > 0) {
+		throw new Error(errors.join('\n\n'));
+	}
+
+	if (!config.url) {
+		console.log(['Task done', '- "url" is empty.'].join('\n'));
+		return undefined;
+	}
+
+	if (config.isNoDesktop && includedDevices.length === 0 && config.customSizes.length === 0) {
+		console.log(
+			[
+				'Task done',
+				'- No desktop, sizes and devices are selected. You have chose at least one desktop size, custom size or device.',
+			].join('\n'),
+		);
+		return undefined;
+	}
+
+	if (!config.isNoDesktop && config.customSizes.length > 0) {
+		console.log('sizes is set and no-desktop is not true: the fixed desktop sizes are captured as well. Set no-desktop: true to capture only the custom sizes and the devices.');
+	}
+
+	return includedDevices;
+}
+
+async function run() {
+	try {
+		const config = readConfig();
+		logConfig(config);
+
+		const includedDevices = verifyConfig(config);
+		if (!includedDevices) {
 			return;
 		}
 
@@ -175,136 +354,24 @@ async function run() {
 		// are written with fs.writeFile, which does not create the directory
 		await ensureScreenshotsDir(PATH);
 
-		// 3b. Optional pre-script (login, cookie banner, ...). It runs once on a
-		// base context; the resulting cookies/localStorage are copied into every
-		// desktop and device context below. Capture always starts after the
-		// pre-script returned, so startCapture() is a documented no-op.
-		let storageState;
-		if (process.env.PRE_SCRIPT_PATH) {
-			core.startGroup('Pre-script');
-			const baseContext = await browser.newContext();
-			try {
-				const basePage = await baseContext.newPage();
-				await runPreScript({
-					browser,
-					context: baseContext,
-					page: basePage,
-					url,
-				});
-				storageState = await baseContext.storageState();
-			} finally {
-				await baseContext.close().catch(() => {});
-				core.endGroup(); // Pre-script
-			}
+		const storageState = await runConfiguredPreScript(config.url);
 
-			console.log(
-				'Pre-script finished, session state is reused for all screenshots.',
-			);
+		if (!config.isNoDesktop) {
+			await captureDesktop(config, storageState);
 		}
 
-		// 4. Take desktop screenshots
-
-		if (!isNoDesktop) {
-			core.startGroup('start process desktop');
-			console.log('Processing desktop screenshot');
-
-			// The 7 fixed sizes, or only the viewport of the context-options
-			const desktopSizes = resolveDesktopViewports(DEFAULT_DESKTOP_VIEWPOINT_RATIO, contextOverrides);
-			if (contextOverrides.viewport) {
-				const {width, height} = contextOverrides.viewport;
-				console.log(`context-options sets a viewport: capturing only ${width}x${height} instead of the ${DEFAULT_DESKTOP_VIEWPOINT_RATIO.length} desktop sizes.`);
-			}
-
-			const desktopContext = await browser.newContext(
-				buildContextOptions(
-					{viewport: desktopSizes[0]},
-					storageState,
-					contextOverrides,
-				),
-			);
-			const desktopPage = await desktopContext.newPage();
-
-			await desktopPage.goto(url, {waitUntil});
-			// Wait for page element when config has element selector
-			await waitForConfiguredSelector(
-				desktopPage,
-				waitForSelector,
-				waitForSelectorOptions,
-			);
-
-			for (const {width, height} of desktopSizes) {
-				// Filename with/without post fix commit hash name; a very tall page is
-				// split into -part1, -part2, ... inserted before that suffix
-				const desktopPath = part =>
-					isNoCommitHashFileName
-						? `${PATH}desktopPage${width}x${height}${part}.${screenshotType}`
-						: `${PATH}desktopPage${width}x${height}${part}-${POST_FIX}.${screenshotType}`;
-
-				await desktopPage.setViewportSize({width, height});
-				runFiles.add(await takeScreenshot(desktopPage, {
-					pathFor: desktopPath,
-					maxImageHeight,
-					fullPage: isFullPage,
-					type: screenshotType,
-					scrollBeforeCapture: isScrollBeforeCapture,
-					waitUntil,
-					log: console.log,
-				}));
-			}
-
-			await desktopContext.close();
-			core.endGroup(); // End start process desktop
+		if (config.customSizes.length > 0) {
+			await captureCustomSizes(config, storageState);
 		}
-
-		// 5. Take mobile device screenshots
 
 		if (includedDevices.length > 0) {
-			core.startGroup('start process mobile devices');
-			console.log('Processing mobile devices screenshot');
-
-			for (const deviceName of includedDevices) {
-				// Filename with/without post fix commit hash name
-				const mobileBase = `${PATH}${deviceName.replaceAll(' ', '_')}`;
-				const mobilePath = part =>
-					isNoCommitHashFileName
-						? `${mobileBase}${part}.${screenshotType}`
-						: `${mobileBase}${part}-${POST_FIX}.${screenshotType}`;
-
-				// Every device gets its own context built from Playwright's descriptor
-				// (viewport, deviceScaleFactor, userAgent, isMobile, hasTouch); the
-				// context-options win over it.
-				const context = await browser.newContext(
-					buildContextOptions(devices[deviceName], storageState, contextOverrides),
-				);
-				const page = await context.newPage();
-
-				await page.goto(url, {waitUntil});
-				// Wait for page element when config has element selector
-				await waitForConfiguredSelector(
-					page,
-					waitForSelector,
-					waitForSelectorOptions,
-				);
-
-				runFiles.add(await takeScreenshot(page, {
-					pathFor: mobilePath,
-					maxImageHeight,
-					fullPage: isFullPage,
-					type: screenshotType,
-					scrollBeforeCapture: isScrollBeforeCapture,
-					waitUntil,
-					log: console.log,
-				}));
-				await context.close();
-			}
-
-			core.endGroup(); // End start process mobile devices
+			await captureDevices(config, includedDevices, storageState);
 		}
 
 		await browser.close();
 
-		// 6. Run screenshot post task
-		await postProcesses(commentOptions, runFiles.names());
+		// 7. Run screenshot post task
+		await postProcesses(config.commentOptions, runFiles.names());
 	} catch (error) {
 		console.error(error);
 		core.setFailed(error.message);

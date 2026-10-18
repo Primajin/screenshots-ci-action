@@ -36,6 +36,12 @@ jobs:
       contents: read
     uses: ./.github/workflows/_fail_invalid-context-options.yml
 
+  fail-invalid-size:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_fail_invalid-size.yml
+
   fail-missing-pre-script:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -128,6 +134,12 @@ jobs:
       pull-requests: write
     uses: ./.github/workflows/_pass_release-pr-comment.yml
 
+  pass-sizes:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_sizes.yml
+
   pass-type:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
     permissions:
@@ -159,6 +171,7 @@ jobs:
       - test
       - lint-pr-title
       - fail-invalid-context-options
+      - fail-invalid-size
       - fail-missing-pre-script
       - fail-pre-script-error
       - fail-pre-script-timeout
@@ -174,6 +187,7 @@ jobs:
       - pass-per-run-files
       - pass-pre-script-login
       - pass-release-pr-comment
+      - pass-sizes
       - pass-type
       - pass-uses-external-url
       - pass-wait-for-selector

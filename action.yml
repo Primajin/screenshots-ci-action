@@ -10,11 +10,15 @@ inputs:
     description: "The website URL you want to screenshot. e.g. https://www.google.com/"
   no-desktop:
     required: false
-    description: "Skip the desktop screenshots and capture only the devices. Needs at least one device. Use true to switch it on."
+    description: "Skip the desktop screenshots and capture only the devices and custom sizes. Needs at least one device or size. Use true to switch it on."
     default: false
   devices:
     required: false
     description: "Mobile devices to capture, in addition to the desktop sizes. e.g. iPhone 13,Galaxy S III landscape,iPad Pro 11 landscape. Separate several devices with a comma. Any name from Playwright's device list; append ' landscape' for the landscape orientation. An unknown name fails the run."
+    default: ''
+  sizes:
+    required: false
+    description: "Custom capture sizes, comma separated, each WIDTHxHEIGHT[@SCALE][:mobile], e.g. 1440x900,1440x900@2,390x844@3:mobile. WIDTH and HEIGHT are whole numbers from 1 to 10000, SCALE (device scale factor) a number from 0.1 to 5 (default 1), :mobile switches isMobile and hasTouch on. Each size is captured in its own context without a device profile, in addition to the desktop sizes (use no-desktop: true to skip them) and the devices. An invalid entry fails the run."
     default: ''
   full-page:
     required: false
@@ -149,6 +153,7 @@ runs:
         INPUT_URL: ${{ inputs.url }}
         INPUT_NO-DESKTOP: ${{ inputs.no-desktop }}
         INPUT_DEVICES: ${{ inputs.devices }}
+        INPUT_SIZES: ${{ inputs.sizes }}
         INPUT_FULL-PAGE: ${{ inputs.full-page }}
         INPUT_SCROLL-BEFORE-CAPTURE: ${{ inputs.scroll-before-capture }}
         INPUT_MAX-IMAGE-HEIGHT: ${{ inputs.max-image-height }}

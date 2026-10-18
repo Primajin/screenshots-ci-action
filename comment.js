@@ -19,6 +19,8 @@ const EXTENSION = /\.[\dA-Za-z]+$/v;
 // The suffix the action appends: 7 character commit sha or a Date.now() fallback
 const HASH_SUFFIX = /-(?:[\da-f]{7}|\d{13})$/v;
 const DESKTOP = /^desktopPage(?<width>\d+)x\d+$/v;
+// A custom size of the sizes input: size1440x900, size1440x900-2x, size390x844-3x-mobile
+const CUSTOM_SIZE = /^size(?<width>\d+)x(?<height>\d+)(?:-(?<scale>\d+(?:\.\d+)?)x)?(?<mobile>-mobile)?$/v;
 
 const DEFAULT_OPTIONS = {
 	layout: 'details',
@@ -66,11 +68,23 @@ function formatBytes(bytes) {
 }
 
 // Readable name of a capture: "iPhone_13-abc1234.jpeg" -> "iPhone 13",
-// "desktopPage540x405-abc1234.jpeg" -> "Desktop 540".
+// "desktopPage540x405-abc1234.jpeg" -> "Desktop 540",
+// "size390x844-3x-mobile-abc1234.jpeg" -> "Size 390 × 844 @3x, mobile".
 function captureLabel(group) {
 	const base = group.replace(EXTENSION, '').replace(HASH_SUFFIX, '');
 	const desktop = DESKTOP.exec(base);
-	return desktop ? `Desktop ${desktop.groups.width}` : base.replaceAll('_', ' ');
+	if (desktop) {
+		return `Desktop ${desktop.groups.width}`;
+	}
+
+	const size = CUSTOM_SIZE.exec(base);
+	if (size) {
+		const {width, height, scale, mobile} = size.groups;
+		const dimensions = `Size ${formatNumber(Number(width))} × ${formatNumber(Number(height))}`;
+		return `${dimensions}${scale ? ` @${scale}x` : ''}${mobile ? ', mobile' : ''}`;
+	}
+
+	return base.replaceAll('_', ' ');
 }
 
 // Highest part number per group, from every local file name, so the part count
@@ -150,10 +164,34 @@ function buildCaptures(uploaded, allFiles) {
 		};
 	});
 
-	// Desktop sizes first, then the devices; numbers sort numerically
-	const rank = capture => capture.group.startsWith('desktopPage') ? 0 : 1;
+	// Desktop sizes first, then the custom sizes, then the devices; numbers sort numerically
+	const base = capture => capture.group.replace(EXTENSION, '').replace(HASH_SUFFIX, '');
+	const customSize = capture => CUSTOM_SIZE.exec(base(capture))?.groups;
+	const rank = capture => {
+		if (capture.group.startsWith('desktopPage')) {
+			return 0;
+		}
+
+		return customSize(capture) ? 1 : 2;
+	};
+
+	// Custom sizes by width, height, scale and then plain before mobile: the order does
+	// not depend on the commit hash in the file name
+	const sizeOrder = (a, b) => {
+		const [first, second] = [customSize(a), customSize(b)];
+		if (!first || !second) {
+			return 0;
+		}
+
+		return Number(first.width) - Number(second.width)
+			|| Number(first.height) - Number(second.height)
+			|| Number(first.scale ?? 1) - Number(second.scale ?? 1)
+			|| Number(Boolean(first.mobile)) - Number(Boolean(second.mobile));
+	};
+
 	return captures.toSorted((a, b) =>
 		rank(a) - rank(b)
+		|| sizeOrder(a, b)
 		|| a.group.localeCompare(b.group, 'en', {numeric: true}),
 	);
 }
