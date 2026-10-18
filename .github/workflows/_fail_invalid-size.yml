@@ -1,0 +1,67 @@
+name: "Negative Test - invalid size"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fail:
+    runs-on: ubuntu-latest
+    name: "Should fail - an invalid entry of sizes fails the action before any capture and names the entry"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Use a malformed entry next to a valid one
+        id: action
+        continue-on-error: true
+        uses: ./
+        with:
+          url: https://example.com
+          sizes: 1440x900,1440*900
+      - name: Check the step failed
+        if: always()
+        run: |
+          if [ "${{ steps.action.outcome }}" == "failure" ]; then
+            echo "The action failed as expected"
+          else
+            echo "::error::The action did not fail"
+            exit 1
+          fi
+      - name: Check every kind of mistake fails with a message that names the entry and captures nothing
+        shell: bash
+        env:
+          INPUT_URL: https://example.com
+        run: |
+          check() {
+            local sizes="$1" message="$2"
+            if env "INPUT_SIZES=$sizes" node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+              cat action.log
+              echo "::error::Expected a non-zero exit code for $sizes"
+              exit 1
+            fi
+            cat action.log
+            grep -qF -- "$message" action.log || { echo "::error::The message for $sizes should contain: $message"; exit 1; }
+            grep -qF -- 'WIDTHxHEIGHT[@SCALE][:mobile]' action.log || { echo "::error::The message for $sizes should show the expected form"; exit 1; }
+          }
+          check '1440*900' '- "1440*900": does not match'
+          check '0x900' '- "0x900": width and height must be whole numbers from 1 to 10000'
+          check '1440x20000' '- "1440x20000": width and height must be whole numbers from 1 to 10000'
+          check '1440x900@0' '- "1440x900@0": the scale must be a number from 0.1 to 5'
+          check '1440x900@0.09' '- "1440x900@0.09": the scale must be a number from 0.1 to 5'
+          check '1440x900@6' '- "1440x900@6": the scale must be a number from 0.1 to 5'
+          check '390x844:phone' '- "390x844:phone": does not match'
+          check 'iPhone 13' '- "iPhone 13": does not match'
+          # A valid entry in the same list does not rescue it, and every bad one is listed
+          check '1440x900, 1440*900, 0x1' '- "0x1": width and height must be'
+          # Invalid sizes and an unknown device are both reported, not only the first
+          if env 'INPUT_SIZES=1440*900' 'INPUT_DEVICES=iPhon 13' node "$GITHUB_WORKSPACE/index.js" > action.log 2>&1; then
+            cat action.log
+            echo '::error::Expected a non-zero exit code for invalid sizes and an unknown device'
+            exit 1
+          fi
+          cat action.log
+          grep -qF -- '- "1440*900": does not match' action.log || { echo '::error::The invalid size should be listed'; exit 1; }
+          grep -qF -- 'did you mean' action.log || { echo '::error::The unknown device should be listed too'; exit 1; }
+          test -z "$(ls screenshots 2>/dev/null)"

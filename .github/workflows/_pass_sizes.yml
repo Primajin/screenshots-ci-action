@@ -1,0 +1,91 @@
+name: "Positive Test - custom sizes"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - custom sizes are captured at exactly width x scale by height x scale, with and without mobile"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      # 1. Sizes only (no-desktop), a messy list: whitespace, an empty entry,
+      #    a duplicate that differs in case and a scale of 1
+      - name: Capture custom sizes without the desktop sizes
+        uses: ./
+        with:
+          url: http://localhost:8080/
+          no-desktop: true
+          sizes: ' 1440x900, 1440x900@2 ,390x844@3:mobile, 800x600@1.5, 1440X900@1,'
+          type: png
+      - name: Assert the image sizes are viewport x scale and the file names carry the scale and mobile
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "custom sizes" --archive-to artifacts/sizes --expect-count 4 --type png --with-hash --expect 'size1440x900-???????.png=1440x900' --expect 'size1440x900-2x-*=2880x1800' --expect 'size390x844-3x-mobile-*=1170x2532' --expect 'size800x600-1.5x-*=1200x900'
+          # Two files for 1440x900 would mean the duplicate was not removed
+          node .github/scripts/assert-screenshots.mjs --match 'size1440x900-???????.png' --expect-count 1
+          node .github/scripts/assert-screenshots.mjs --expect-absent 'desktopPage*' --expect-absent '*@*'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 2. Mobile makes the page a phone: the demo page reports a touch pointer and
+      #    the viewport it was given, which the scheme squares show (yellow = touch)
+      - name: Capture the scheme page as a mobile and as a plain size of the same dimensions
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=scheme
+          no-desktop: true
+          sizes: 390x844:mobile,390x844
+          type: png
+      - name: Assert mobile has the touch colour, the plain size has not
+        run: |
+          node .github/scripts/assert-screenshots.mjs --title "mobile and plain" --archive-to artifacts/mobile --expect-count 2 --expect 'size390x844-*=390x844' --expect 'size390x844-mobile-*=390x844' --type png
+          node .github/scripts/assert-screenshots.mjs --match 'size390x844-mobile-*' --expect-count 1 --color 'ffee00@240,724,120,120:0.99'
+          node .github/scripts/assert-screenshots.mjs --match 'size390x844-???????.png' --expect-count 1 --color '888888@240,724,120,120:0.99'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 3. Next to the desktop sizes and the devices, with context-options
+      - name: Capture sizes next to the desktop sizes and a device, with context-options that the size overrides
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=scheme
+          devices: iPhone 13
+          sizes: 800x600@2
+          type: png
+          context-options: '{"colorScheme": "dark", "deviceScaleFactor": 4, "viewport": {"width": 100, "height": 100}}'
+      - name: Assert the desktop capture, the size and the device are all there
+        run: |
+          # The viewport of context-options makes the desktop capture one file of 100x100 at scale 4,
+          # the size entry keeps its own viewport and scale, the dark scheme applies to it
+          node .github/scripts/assert-screenshots.mjs --title "sizes with context-options" --archive-to artifacts/combined --expect-count 3 --type png --expect 'desktopPage100x100-*=400x400' --expect 'size800x600-2x-*=1600x1200' --expect 'iPhone_13-*=400x400'
+          node .github/scripts/assert-screenshots.mjs --match 'size800x600-2x-*' --expect-count 1 --color '0088ff@0,960,240,240:0.99'
+      - name: Reset the screenshots directory
+        run: rm -rf screenshots
+
+      # 4. Full page works for a size (the 20000px page is sliced into parts)
+      - name: Capture a tall page at a custom size
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=tall
+          no-desktop: true
+          sizes: 600x800@2
+          full-page: true
+          max-image-height: 5000
+          type: png
+      - name: Assert the parts of the custom size
+        run: node .github/scripts/assert-screenshots.mjs --title "tall page, custom size" --archive-to artifacts/tall --match 'size600x800-2x-part*' --max-height 5000 --type png --max-empty-fraction 0.02 --distinct-parts
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-sizes
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn
