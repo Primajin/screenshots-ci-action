@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.1.0](https://github.com/Primajin/screenshots-ci-action/compare/v4.0.0...v4.1.0) (2026-10-18)
+
+
+### Features
+
+* add a mock phone status bar for mobile captures ([#29](https://github.com/Primajin/screenshots-ci-action/issues/29)) ([2a0dd03](https://github.com/Primajin/screenshots-ci-action/commit/2a0dd034411cd1e064fed8a87a54dc0f3f7a4bab))
+* add context-options and publish only the files each call wrote ([#24](https://github.com/Primajin/screenshots-ci-action/issues/24)) ([913c1f4](https://github.com/Primajin/screenshots-ci-action/commit/913c1f4306bc5d629eef7c4b3623c4ba06d4e2e7))
+* add report-page-problems for page errors and missed selectors ([#28](https://github.com/Primajin/screenshots-ci-action/issues/28)) ([75f8ba9](https://github.com/Primajin/screenshots-ci-action/commit/75f8ba9c2f3dee4faf1b57948f2a258688a5e4ee))
+* add the grow-viewport strategy for full-page captures ([#27](https://github.com/Primajin/screenshots-ci-action/issues/27)) ([a0cbcdd](https://github.com/Primajin/screenshots-ci-action/commit/a0cbcddf52505780d5f481b6e4f9d31afd371f42))
+* add the sizes input for custom resolutions ([#25](https://github.com/Primajin/screenshots-ci-action/issues/25)) ([159103e](https://github.com/Primajin/screenshots-ci-action/commit/159103ef4c42f123da046ec326a1ff631d29982b))
+* let several calls share one comment with comment-section ([#26](https://github.com/Primajin/screenshots-ci-action/issues/26)) ([b6b3218](https://github.com/Primajin/screenshots-ci-action/commit/b6b3218041a6bebdaaea910b9594d6ce492367e5))
+
 ## [4.0.0](https://github.com/Primajin/screenshots-ci-action/compare/v3.2.0...v4.0.0) (2026-10-17)
 
 
