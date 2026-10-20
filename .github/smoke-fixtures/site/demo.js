@@ -1,6 +1,6 @@
 // Acme Demo Shop helper: prints the measured viewport into the header band,
 // draws the 500px ruler, writes the footer marker and runs the page modes
-// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe, ?mode=problems, ?mode=app, ?theme=dark).
+// (?mode=late, ?mode=wait-until, ?mode=tall, ?mode=iframe, ?mode=problems, ?mode=orientation, ?mode=app, ?theme=dark).
 // Text only, no dependencies.
 (function () {
   'use strict';
@@ -147,6 +147,31 @@
     }, 0);
   }
 
+  // ?mode=orientation: the card is painted from a deviceorientation event only,
+  // with no static fallback, like Gyros. Where DeviceOrientationEvent has
+  // requestPermission (current Chromium), the listener is only added when it
+  // resolves to 'granted': full Chromium grants it and then fires one event with
+  // null angles, the default chromium-headless-shell answers 'prompt', so the
+  // card keeps the colour of the page there.
+  function startOrientationMode() {
+    var DeviceEvent = window.DeviceOrientationEvent;
+    function listen() {
+      window.addEventListener('deviceorientation', function () {
+        $('#orientation-card').classList.add('painted');
+      });
+    }
+
+    if (DeviceEvent && typeof DeviceEvent.requestPermission === 'function') {
+      DeviceEvent.requestPermission().then(function (state) {
+        if (state === 'granted') {
+          listen();
+        }
+      }).catch(function () {});
+    } else if (DeviceEvent) {
+      listen();
+    }
+  }
+
   function printTimings() {
     var panel = $('#timings');
     if (panel) {
@@ -201,5 +226,7 @@
     startIframeMode();
   } else if (mode === 'problems') {
     startProblemsMode();
+  } else if (mode === 'orientation') {
+    startOrientationMode();
   }
 })();

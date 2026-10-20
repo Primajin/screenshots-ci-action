@@ -133,6 +133,12 @@ jobs:
       contents: read
     uses: ./.github/workflows/_pass_no-desktop.yml
 
+  pass-orientation-event:
+    if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize","closed"]'), github.event.action)
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_pass_orientation-event.yml
+
   pass-per-run-files:
     if: github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened","synchronize"]'), github.event.action) && github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]'
     permissions:
@@ -219,6 +225,7 @@ jobs:
       - pass-full-page-tall
       - pass-no-commit-hash-file-name
       - pass-no-desktop
+      - pass-orientation-event
       - pass-per-run-files
       - pass-pre-script-login
       - pass-release-pr-comment

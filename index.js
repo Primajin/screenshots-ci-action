@@ -431,8 +431,14 @@ async function run() {
 		}
 
 		// 3. Launch Playwright (chromium). The browser is installed by action.yml
-		// via `npx playwright install --with-deps chromium`.
-		browser = await chromium.launch();
+		// via `npx playwright install --with-deps chromium`. channel: 'chromium' opts
+		// in to the full Chromium in new headless mode instead of the default
+		// chromium-headless-shell, which differs from a real browser: for example
+		// DeviceOrientationEvent.requestPermission() resolves to 'prompt' there, but
+		// to 'granted' in Chromium, so a page that only paints once it got the
+		// permission and a deviceorientation event (v3, with Puppeteer's new headless
+		// Chrome, did show it) came out unpainted.
+		browser = await chromium.launch({channel: 'chromium'});
 
 		// Always: also without GITHUB_WORKSPACE (a local run) the parts of a tall page
 		// are written with fs.writeFile, which does not create the directory

@@ -1,0 +1,51 @@
+name: "Positive Test - orientation event"
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  pass:
+    runs-on: ubuntu-latest
+    name: "Should pass - the browser is full Chromium, so a page that paints only after the device orientation permission and event (like Gyros) is painted, in a custom size and on a device"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Serve the fixture site
+        uses: ./.github/actions/serve-fixtures
+
+      # ?mode=orientation has a 400x200 card at the bottom left that keeps the colour
+      # of the page until a deviceorientation event arrives, then shows a pink to
+      # yellow gradient (solid pink on the left 20%, solid yellow on the right 20%).
+      # The page first asks DeviceOrientationEvent.requestPermission() and only
+      # listens when it is 'granted', and there is no static fallback: only a
+      # browser that grants it and fires the event paints the card. Full Chromium
+      # in new headless mode does, the default chromium-headless-shell answers
+      # 'prompt' and leaves the card the colour of the page.
+      - name: Capture the orientation page as a custom size and as an iPhone 13
+        uses: ./
+        with:
+          url: http://localhost:8080/?mode=orientation
+          no-desktop: true
+          sizes: 800x600@1
+          devices: iPhone 13
+          type: png
+      - name: Assert the card of the custom size is a gradient (pink left, yellow right)
+        run: |
+          # 800x600 at scale 1: the card is x 0..400, y 400..600. Its plateaus are x 0..80 and x 320..400.
+          node .github/scripts/assert-screenshots.mjs --title "orientation event, custom size" --archive-to artifacts/orientation-size --match 'size800x600-*' --expect-count 1 --expect 'size800x600-*=800x600' --type png --color 'ff0066@0,400,70,200:0.99' --color 'ffcc00@330,400,70,200:0.99' --color 'ffcc00@0,400,70,200:0-0.01' --color 'ff0066@330,400,70,200:0-0.01'
+      - name: Assert the card of the iPhone 13 is a gradient (pink left, yellow right)
+        run: |
+          # 390x664 at scale 3: the card is x 0..1200 (1170 visible), y 1392..1992. Its plateaus are x 0..240 and x 960..1200.
+          node .github/scripts/assert-screenshots.mjs --title "orientation event, device" --archive-to artifacts/orientation-device --match 'iPhone_13-*' --expect-count 1 --expect 'iPhone_13-*=1170x1992' --type png --color 'ff0066@0,1392,230,600:0.99' --color 'ffcc00@970,1392,200,600:0.99' --color 'ffcc00@0,1392,230,600:0-0.01' --color 'ff0066@970,1392,200,600:0-0.01'
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshots-orientation-event
+          path: artifacts
+          retention-days: 7
+          if-no-files-found: warn
