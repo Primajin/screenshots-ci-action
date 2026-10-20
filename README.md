@@ -116,7 +116,7 @@ by running both. Changes that can break an existing workflow are listed in
 | Upload without a pull request | Only on pull request events. | With `comment: false` and a `release-id` the screenshots are uploaded on any event, for example `push`. | [PR comments](#pr-comments) |
 | `release-id` | Read by the code, but not declared in `action.yml`; described only in the README. | A declared input; a single long-lived pre-release shared by all pull requests is the documented setup. | [README.PR.md](README.PR.md) |
 | Devices | 66 device profiles (131 names with `landscape`). A name with a space after the comma, or in another case, was logged as invalid and skipped. | 107 profiles (207 names). Names are trimmed and matched without regard to case. An unknown name fails the run with "did you mean" suggestions. | [Supported mobile devices](#supported-mobile-devices) |
-| Browser setup | The Chrome of the runner; the v3 examples add an install step (`puppeteer-headful`). | The action installs its own Chromium, no extra step, and runs it as full Chromium in new headless mode, so a page sees what it sees in a regular Chrome. | [Runners](#permissions-tokens-and-runners) |
+| Browser setup | The Chrome of the runner; the v3 examples add an install step (`puppeteer-headful`). | The action installs its own Chromium, no extra step, and runs it as full Chromium in new headless mode, so a page behaves closer to a regular Chrome. | [Runners](#permissions-tokens-and-runners) |
 | `wait-for-selector-timeout: 0` | Became `30000`, although the description says 0 disables the timeout. | `0` disables the timeout. | [Inputs](#when-to-capture) |
 | `wait-until` | `load`, `domcontentloaded`, `networkidle0`, `networkidle2`; any other value silently became `networkidle0`. | Adds `commit`, keeps the two legacy values (both map to `networkidle`), warns about an unknown value. | [Inputs](#when-to-capture) |
 | Telegram | One screenshot triggered `sendPhoto` and a one-item `sendMediaGroup`; 11 files ended in a group of one (an album needs 2 to 10). | One `sendPhoto`; 11 files are sent as 9 + 2. | [README.Telegram.md](README.Telegram.md#how-the-files-are-sent) |
@@ -262,10 +262,11 @@ accept that forks get an artifact only. See [README.PR.md](README.PR.md#3-pull-r
 (`npx playwright install --with-deps chromium`) on every run; the browser download
 is cached by Playwright version. The browser runs as the full Chromium in new
 headless mode (`channel: 'chromium'`), not as Playwright's default
-`chromium-headless-shell`, so pages see the same events and permissions as in a
-regular Chrome. A page that paints a gyroscope effect from the first
-`deviceorientation` event, after `DeviceOrientationEvent.requestPermission()`
-was granted, shows it (the headless shell answers `prompt`). Known limits:
+`chromium-headless-shell`, so pages behave closer to a regular Chrome. A page
+that paints a gyroscope effect from the first `deviceorientation` event, after
+`DeviceOrientationEvent.requestPermission()` was granted, shows it (the headless
+shell answers `prompt`). The full browser is heavier than the headless shell
+(memory, startup time) and may differ in small rendering details. Known limits:
 
 - `--with-deps` installs system libraries with `apt`, so it needs a Debian or
   Ubuntu runner and `sudo`. On a self-hosted Linux runner without `sudo`,
@@ -423,7 +424,8 @@ true` the action reports what went wrong while it captured:
 
 - an **uncaught exception** of the page (`pageerror`),
 - an **error in the console** (`console.error`, including the "Failed to load
-  resource" errors of the browser for a 404),
+  resource" errors of the browser for a 404; not the one for a missing
+  `/favicon.ico`, which the browser asks for on its own),
 - a `wait-for-selector` that **timed out** ("never reached `<selector>`").
 
 The listeners are attached to every page right after it is created and before it

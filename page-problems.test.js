@@ -23,7 +23,7 @@ function fakePage() {
 	};
 }
 
-const consoleMessage = (type, text) => ({type: () => type, text: () => text});
+const consoleMessage = (type, text, url) => ({type: () => type, text: () => text, location: () => ({url})});
 
 describe('createProblemCollector', () => {
 	it('starts empty', () => {
@@ -39,6 +39,40 @@ describe('createProblemCollector', () => {
 		expect(collector.list()).toEqual([
 			{label: 'Desktop', text: 'pageerror: boom', count: 1},
 			{label: 'Desktop', text: 'console: Failed to load resource', count: 1},
+		]);
+	});
+
+	it('ignores the failed request for /favicon.ico, which only full Chromium makes', () => {
+		const collector = createProblemCollector();
+		const page = fakePage();
+		collector.attach(page, 'Desktop');
+		const text = 'Failed to load resource: the server responded with a status of 404 (File not found)';
+		page.emit('console', consoleMessage('error', text, 'http://localhost:8080/favicon.ico'));
+		page.emit('console', consoleMessage('error', text, 'https://example.com/sub/favicon.ico?v=2'));
+		expect(collector.list()).toEqual([]);
+	});
+
+	it('still reports a failed resource that is not the favicon', () => {
+		const collector = createProblemCollector();
+		const page = fakePage();
+		collector.attach(page, 'Desktop');
+		const text = 'Failed to load resource: the server responded with a status of 404 (File not found)';
+		page.emit('console', consoleMessage('error', text, 'http://localhost:8080/missing.png'));
+		page.emit('console', consoleMessage('error', text, 'http://localhost:8080/favicon.icon'));
+		page.emit('console', consoleMessage('error', text, ''));
+		expect(collector.list().map(problem => problem.text)).toEqual([`console: ${text}`]);
+		expect(collector.list()[0].count).toBe(3);
+	});
+
+	it('still reports an error of the page itself, also when it comes from the favicon url', () => {
+		const collector = createProblemCollector();
+		const page = fakePage();
+		collector.attach(page, 'Desktop');
+		page.emit('console', consoleMessage('error', 'cart is undefined', 'http://localhost:8080/demo.js'));
+		page.emit('console', consoleMessage('error', 'cart is undefined too', 'http://localhost:8080/favicon.ico'));
+		expect(collector.list().map(problem => problem.text)).toEqual([
+			'console: cart is undefined',
+			'console: cart is undefined too',
 		]);
 	});
 

@@ -8,9 +8,26 @@ const MAX_ANNOTATIONS = 10;
 
 const oneLine = text => String(text ?? '').replaceAll(/\s+/gv, ' ').trim();
 
+// Full Chromium asks every page for /favicon.ico (the headless shell never did)
+// and logs a console error when the site has none. That is the browser, not
+// the page, so it is no problem of the page.
+const FAILED_RESOURCE = /^Failed to load resource/v;
+
+function isFaviconFailure(message) {
+	if (!FAILED_RESOURCE.test(message.text())) {
+		return false;
+	}
+
+	try {
+		return new URL(message.location?.()?.url ?? '').pathname.endsWith('/favicon.ico');
+	} catch {
+		return false;
+	}
+}
+
 /**
  Collect the problems of the pages of one run.
- @returns {{add: (label: string, text: string) => void, attach: (page: object, label: string) => void, list: () => {label: string, text: string, count: number}[]}} add() records a problem (the same text of the same capture is counted, not repeated); attach() listens to a page's uncaught errors and console errors; list() answers the problems in the order they happened.
+ @returns {{add: (label: string, text: string) => void, attach: (page: object, label: string) => void, list: () => {label: string, text: string, count: number}[]}} add() records a problem (the same text of the same capture is counted, not repeated); attach() listens to a page's uncaught errors and console errors (not the failed request for /favicon.ico); list() answers the problems in the order they happened.
  */
 function createProblemCollector() {
 	const problems = [];
@@ -36,7 +53,7 @@ function createProblemCollector() {
 				add(label, `pageerror: ${error?.message ?? error}`);
 			});
 			page.on('console', message => {
-				if (message.type() === 'error') {
+				if (message.type() === 'error' && !isFaviconFailure(message)) {
 					add(label, `console: ${message.text()}`);
 				}
 			});

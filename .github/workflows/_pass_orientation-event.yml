@@ -24,6 +24,8 @@ jobs:
       # browser that grants it and fires the event paints the card. Full Chromium
       # in new headless mode does, the default chromium-headless-shell answers
       # 'prompt' and leaves the card the colour of the page.
+      # The capture waits for the card to be painted (5 s at most, then it shoots
+      # anyway and the colour assertions below fail), so it does not depend on timing
       - name: Capture the orientation page as a custom size and as an iPhone 13
         uses: ./
         with:
@@ -32,6 +34,8 @@ jobs:
           sizes: 800x600@1
           devices: iPhone 13
           type: png
+          wait-for-selector: '#orientation-card.painted'
+          wait-for-selector-timeout: 5000
       - name: Assert the card of the custom size is a gradient (pink left, yellow right)
         run: |
           # 800x600 at scale 1: the card is x 0..400, y 400..600. Its plateaus are x 0..80 and x 320..400.
