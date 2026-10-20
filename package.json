@@ -1,6 +1,6 @@
 {
   "name": "screenshots-ci-action",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "description": "GitHub Action that captures desktop and multi-device website screenshots with Playwright and saves them as artifacts, posts them to pull requests or sends them to Telegram",
   "license": "MIT",
   "repository": "github:Primajin/screenshots-ci-action",

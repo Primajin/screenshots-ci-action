@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.1](https://github.com/Primajin/screenshots-ci-action/compare/v4.1.0...v4.1.1) (2026-10-20)
+
+
+### Bug Fixes
+
+* run the full Chromium in new headless mode ([#32](https://github.com/Primajin/screenshots-ci-action/issues/32)) ([9fe92ed](https://github.com/Primajin/screenshots-ci-action/commit/9fe92edaddd520597fd0fa56b300d84fcddf38fd))
+
 ## [4.1.0](https://github.com/Primajin/screenshots-ci-action/compare/v4.0.0...v4.1.0) (2026-10-18)
 
 
