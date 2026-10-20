@@ -25,6 +25,7 @@ target `main` and to pushes, so on a stacked PR it is skipped.
 | `pass-comment-section` | `comment-section` on the PR: four calls with one `comment-tag` and the headline `Component showcase`. Call 1 (desktop light, `comment-open: first`) creates the comment with one open section; call 2 (dark) adds a section after it and leaves the first byte for byte as it was (same comment id, one footer); call 3 (a `390x844@3:mobile` size) adds a third; call 4 (dark again, scale factor 2) replaces only the dark section where it is. Every step asserts the ordered section slugs, the images per section, the untouched sections and (for call 4) that the call uploaded exactly one release asset. The scenario deletes its own comment from an earlier run first, see below |
 | `pass-report-page-problems` | `report-page-problems: true` on `?mode=problems` (a console error and a page error while it loads, a `console.log` that is not a problem) with a `wait-for-selector` that times out, captured as a custom size and an iPhone 13: the screenshots are still taken, the comment has the `> [!WARNING]` block "The page reported 6 problems" with the pageerror, the console error and `never reached` of both captures and not the log; the control call without the input has no warning at all |
 | `pass-status-bar` | `status-bar` on an iPhone 13 capture of `?mode=app` (1170x1992 without a bar), proven pixel by pixel: iOS strip is 1170x2133 and Android strip 1170x2064, the rows of the bar differ from the baseline and the page below it is the baseline, row for row; overlay keeps 1170x1992 and leaves everything below the bar untouched; `status-bar-theme: auto` with a dark colour scheme draws white glyphs on a dark page; a battery of 20 is red and a charging one green; only mobile captures get a bar (a plain size and the 7 desktop sizes keep their size, a `:mobile` size grows); a tall page in parts has the bar on the first part, which stays within `max-image-height`, and the parts add up to the page plus the bar |
+| `pass-orientation-event` | `?mode=orientation`, a card that keeps the colour of the page until `DeviceOrientationEvent.requestPermission()` is granted and a `deviceorientation` event arrives, with no static fallback (like Gyros), captured as a custom size and as an iPhone 13: the pink and yellow plateaus of its gradient are in the image, so the browser was full Chromium in new headless mode (the default `chromium-headless-shell` answers `prompt` and leaves the card blank) |
 | `pass-per-run-files` | two sequential calls in one job on the PR (comment tags `per-run-first` and `per-run-second`): the directory holds both images, each comment embeds only its own image and the second call uploaded exactly one release asset |
 | `pass-type` | png and jpeg: magic bytes and extension agree |
 | `pass-no-commit-hash-file-name` | no hash or timestamp suffix (and the control run has one) |
@@ -154,6 +155,12 @@ tests (`npm test`) need neither a browser nor a network.
     any mode (the status bar scenario and the screenshots of the README, which are
     in `asset/status-bar-ios-light.jpg` and `asset/status-bar-android-dark.jpg`
     and were made with the action itself).
+  - `?mode=orientation` draws a 400x200 card at the bottom left of the viewport
+    that has the colour of the page until the permission of
+    `DeviceOrientationEvent.requestPermission()` was granted and a
+    `deviceorientation` event arrives, then a gradient (solid pink on the left 20%,
+    solid yellow on the right 20%), with no static fallback, like Gyros (the
+    orientation-event scenario).
   - `?mode=problems` logs a console error and a console log and throws an
     uncaught error while it loads (the report-page-problems scenario).
   - `?mode=iframe` puts a 600x400 sandboxed iframe of `http://127.0.0.1:8082/`

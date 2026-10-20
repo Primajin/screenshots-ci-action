@@ -83,6 +83,10 @@
   <div id="scheme-probe" aria-hidden="true">
     <i id="scheme-color"></i><i id="scheme-motion"></i><i id="scheme-touch"></i>
   </div>
+  <!-- ?mode=orientation: a card that keeps the colour of the page until the
+       permission for and the first deviceorientation event arrive (what Gyros
+       does), no static fallback -->
+  <div id="orientation-card" aria-hidden="true"></div>
   <script src="demo.js"></script>
 </body>
 </html>
