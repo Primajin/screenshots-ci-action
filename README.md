@@ -162,7 +162,7 @@ All inputs are optional except `url`. How switches are read differs a little:
 | `wait-for-selector-timeout` | `30000` | Maximum time to wait for the selector in milliseconds. `0` disables the timeout. |
 | `wait-for-selector-visible` | `false` | Wait for the element to be in the DOM **and** visible (no `display: none` or `visibility: hidden`), instead of only attached. Wins over `wait-for-selector-hidden`. |
 | `wait-for-selector-hidden` | `false` | Wait for the element to be gone from the DOM **or** hidden, instead of only attached. |
-| `pre-script-path` | `''` | Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving `{ browser, context, page, url }`. It runs once before any screenshot, for example to log in or to dismiss a cookie banner; the cookies and `localStorage` it sets are reused for every screenshot. See [README.pre-script.md](README.pre-script.md). |
+| `pre-script-path` | `''` | Path to a JavaScript module, relative to the workspace or absolute, whose default export is an async function receiving `{ browser, context, page, url }`. Use it to log in or prepare the page before the capture, for example to dismiss a cookie banner. It runs once before any screenshot; cookies and `localStorage` it sets are reused for every screenshot. See [README.pre-script.md](README.pre-script.md). |
 | `pre-script-timeout` | `30000` | Maximum time in milliseconds the pre-script may run before the action fails. `0` or an invalid value does **not** disable the timeout, it falls back to `30000`. |
 
 ### Where the screenshots go
