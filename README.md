@@ -257,9 +257,9 @@ is posted; Telegram is not available either. Guard the PR comment step with
 accept that forks get an artifact only. See [README.PR.md](README.PR.md#3-pull-requests-from-forks-and-dependabot).
 
 **Runners.** The action is developed and tested on **`ubuntu-latest`**
-(GitHub-hosted, Ubuntu) only; that is what its CI runs. It installs Node 24
-(`actions/setup-node`), its npm dependencies and Chromium
-(`npx playwright install --with-deps chromium`) on every run; the browser download
+(GitHub-hosted, Ubuntu) only; that is what its CI runs. It installs Node 24, its npm dependencies and Chromium
+(`npx playwright install --with-deps chromium`) on every run through the shared
+`Primajin/.github/actions/setup-playwright` action; the browser download
 is cached by Playwright version. The browser runs as the full Chromium in new
 headless mode (`channel: 'chromium'`), not as Playwright's default
 `chromium-headless-shell`, so pages behave closer to a regular Chrome. A page
