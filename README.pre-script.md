@@ -10,9 +10,9 @@ every device, so a login persists across all viewports.
 Inputs: `pre-script-path` (empty by default: no pre-script) and
 `pre-script-timeout` (milliseconds, default `30000`).
 
-`pre-script-path` points to a JavaScript module (relative to
-`GITHUB_WORKSPACE`, so run `actions/checkout` first) whose **default export** is
-an async function. It receives:
+`pre-script-path` points to a JavaScript module, relative to
+`GITHUB_WORKSPACE` (so run `actions/checkout` first) or absolute, whose
+**default export** is an async function. It receives:
 
 | Argument | Description |
 | --- | --- |
