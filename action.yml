@@ -94,7 +94,7 @@ inputs:
     default: '30000'
   pre-script-path:
     required: false
-    description: "Path (relative to the workspace) to a JavaScript module whose default export is an async function receiving { browser, context, page, url }. It runs once before any screenshot, e.g. to log in or dismiss a cookie banner; cookies and localStorage it sets are reused for every screenshot. See README.pre-script.md."
+    description: "Path to a JavaScript module, relative to the workspace or absolute, whose default export is an async function receiving { browser, context, page, url }. Use it to log in or prepare the page before the capture, for example to dismiss a cookie banner. It runs once before any screenshot; cookies and localStorage it sets are reused for every screenshot. See README.pre-script.md."
     default: ''
   pre-script-timeout:
     required: false
