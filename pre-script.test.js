@@ -1,3 +1,4 @@
+// Kept identical in Primajin/screenshots-ci-action and Primajin/webapp-console-log-action: change both copies together.
 import {
 	mkdir,
 	mkdtemp,
@@ -57,6 +58,11 @@ describe('getPreScriptTimeout', () => {
 	test('should use the configured timeout', () => {
 		vi.stubEnv('PRE_SCRIPT_TIMEOUT', '1500');
 		expect(getPreScriptTimeout()).toBe(1500);
+	});
+
+	test('should use the default timeout when the variable is not set', () => {
+		vi.stubEnv('PRE_SCRIPT_TIMEOUT', undefined);
+		expect(getPreScriptTimeout()).toBe(30_000);
 	});
 
 	test.each(['invalid', '', '0', '-5'])(
@@ -172,6 +178,21 @@ describe('runPreScript', () => {
 			await expect(runPreScript(args())).rejects.toThrow(
 				`Failed to execute pre-script "${filePath}": login failed`,
 			);
+		} finally {
+			await rm(directory, {force: true, recursive: true});
+		}
+	});
+
+	test('should keep the original error as the cause', async () => {
+		const {directory, filePath} = await writePreScript(
+			'export default async () => { throw new Error("login failed"); };',
+		);
+		vi.stubEnv('PRE_SCRIPT_PATH', filePath);
+
+		try {
+			const error = await runPreScript(args()).catch(error_ => error_);
+			expect(error.cause).toBeInstanceOf(Error);
+			expect(error.cause.message).toBe('login failed');
 		} finally {
 			await rm(directory, {force: true, recursive: true});
 		}

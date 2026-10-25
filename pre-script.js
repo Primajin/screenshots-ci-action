@@ -1,3 +1,4 @@
+// Kept identical in Primajin/screenshots-ci-action and Primajin/webapp-console-log-action: change both copies together.
 import path from 'node:path';
 import process from 'node:process';
 import {pathToFileURL} from 'node:url';
