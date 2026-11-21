@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.2.0](https://github.com/Primajin/screenshots-ci-action/compare/v4.1.1...v4.2.0) (2026-11-21)
+
+
+### Features
+
+* add validate-status, positive-statuses and negative-statuses ([#42](https://github.com/Primajin/screenshots-ci-action/issues/42)) ([2b95a7f](https://github.com/Primajin/screenshots-ci-action/commit/2b95a7f567baf14dc5172b2797ec89f40c7e9023))
+
+
+### Dependencies
+
+* update @vitest/coverage-v8, playwright, vitest ([cd26145](https://github.com/Primajin/screenshots-ci-action/commit/cd26145097d8ebe50facaf5aa61b04ecaebf4ca8))
+* update playwright ([32ef33e](https://github.com/Primajin/screenshots-ci-action/commit/32ef33e19795145d1a35ab6a3b7a7a5c10a19c8d))
+
 ## [4.1.1](https://github.com/Primajin/screenshots-ci-action/compare/v4.1.0...v4.1.1) (2026-10-20)
 
 
