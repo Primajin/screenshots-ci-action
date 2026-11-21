@@ -14,6 +14,7 @@ import {
 	mergeSection,
 	parseFileName,
 	renderComment,
+	renderFailureComment,
 } from './comment.js';
 
 const entry = (fileName, url, bytes = 1024, size = {}) => ({
@@ -1038,5 +1039,40 @@ describe('page problems in the comment', () => {
 		const {body} = buildCommentBody(uploads, many, {problems: [problem('Desktop', 'pageerror: x')]}, full.length - 100);
 		expect(body).not.toContain('<img');
 		expect(body).toContain('> - Desktop: ` pageerror: x `');
+	});
+});
+
+describe('renderFailureComment', () => {
+	const failure = {label: 'Desktop', reason: 'HTTP status 404 is not in the configured positive status codes (200).'};
+
+	it('says why there are no screenshots, under the marker and the headline, with the footer', () => {
+		const body = renderFailureComment(failure, {tag: 'docs', headline: 'Shots', footer: {sha: 'abc1234def', runUrl: 'https://example.com/run/1'}});
+		expect(body.startsWith(`${commentMarker('docs')}\n### Shots\n\n`)).toBe(true);
+		expect(body).toContain('> [!CAUTION]\n> No screenshots were taken: Desktop: HTTP status 404 is not in the configured positive status codes (200).\n');
+		expect(body).toContain('Commit abc1234');
+		expect(body).not.toContain('<img');
+	});
+
+	it('lists what the page reported before the failure', () => {
+		const body = renderFailureComment(failure, {problems: [{label: 'Desktop', text: 'console: Failed to load resource: 404', count: 1}]});
+		expect(body).toContain('> The page reported 1 problem while it was captured:');
+		expect(body).toContain('> - Desktop: ` console: Failed to load resource: 404 `');
+	});
+
+	it('escapes the label', () => {
+		expect(renderFailureComment({...failure, label: '<b>x</b>'})).toContain('&lt;b&gt;x&lt;/b&gt;: HTTP status 404');
+	});
+
+	it('replaces only its own section and keeps the others', () => {
+		const previous = mergeSection(undefined, 'screenshots', 'mobile', 'MOBILE CONTENT', {headline: 'Screenshots'});
+		const body = renderFailureComment(failure, {
+			section: {name: 'Desktop', slug: 'desktop'},
+			previousBody: previous,
+		});
+		expect(body).toContain('MOBILE CONTENT');
+		expect(body).toContain('No screenshots were taken');
+		const again = renderFailureComment({...failure, reason: 'other'}, {section: {name: 'Desktop', slug: 'desktop'}, previousBody: body});
+		expect(again.match(/No screenshots were taken/gv)).toHaveLength(1);
+		expect(again).toContain('MOBILE CONTENT');
 	});
 });
