@@ -644,6 +644,31 @@ function shortenLinks(uploaded, allFiles, options, limit) {
 	return {body: fitted.slice(0, limit), warnings};
 }
 
+/**
+ Render the comment of a run that failed the HTTP status validation: instead of screenshots it says why there are none, so the comment of an earlier push does not keep showing images of a page that no longer answers as expected. With a section only this call's section is replaced.
+ @param {{label: string, reason: string}} failure The capture whose navigation failed and why (the reason of validateStatusCode).
+ @param {object} [options] headline, tag, footer ({sha, runUrl} or null), problems ([{label, text, count}] the page reported before the failure), section ({name, slug}) and previousBody, as for renderComment.
+ @returns {string} The markdown, starting with the hidden marker line.
+ */
+function renderFailureComment(failure, options = {}) {
+	const settings = {...DEFAULT_OPTIONS, ...options};
+	const lines = [
+		`No screenshots were taken: ${escapeHtml(failure.label)}: ${escapeHtml(failure.reason)}`,
+		...renderProblems(settings.problems),
+	];
+	const warning = `> [!CAUTION]\n${lines.map(line => `> ${line}`).join('\n')}\n\n`;
+	if (settings.section) {
+		return frameSection(warning, settings);
+	}
+
+	return [
+		`${commentMarker(settings.tag)}\n`,
+		`### ${escapeHtml(settings.headline)}\n\n`,
+		warning,
+		renderFooter(settings.footer),
+	].join('');
+}
+
 export {
 	DEFAULT_OPTIONS,
 	GITHUB_MAX_IMAGE_HEIGHT,
@@ -660,4 +685,5 @@ export {
 	mergeSection,
 	parseFileName,
 	renderComment,
+	renderFailureComment,
 };
