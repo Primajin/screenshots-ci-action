@@ -13,12 +13,22 @@ import {
 	resolveMaxImageHeight,
 	takeScreenshot,
 } from './capture.js';
-import {buildCommentBody, captureLabel, commentMarker} from './comment.js';
+import {
+	buildCommentBody,
+	captureLabel,
+	commentMarker,
+	renderFailureComment,
+} from './comment.js';
 import {resolveCommentOptions} from './comment-options.js';
 import {readImageSize} from './image-size.js';
 import {annotateProblems, createProblemCollector} from './page-problems.js';
 import {publishComment, shouldUpload} from './pr-comment.js';
 import {createRunFiles, ensureScreenshotsDir} from './screenshots-dir.js';
+import {
+	assertStatus,
+	resolveStatusOptions,
+	StatusValidationError,
+} from './status.js';
 import {createStatusBar, resolveGlyphColor, resolveStatusBarOptions} from './status-bar.js';
 import {
 	buildContextOptions,
@@ -162,6 +172,12 @@ function readConfig() {
 			hidden: core.getInput('wait-for-selector-hidden').toLowerCase() === 'true',
 			timeout: core.getInput('wait-for-selector-timeout'),
 		}),
+		// Which HTTP statuses of the navigation fail the run (see "HTTP status validation" in the README)
+		statusOptions: resolveStatusOptions({
+			validate: core.getInput('validate-status'),
+			positive: core.getInput('positive-statuses'),
+			negative: core.getInput('negative-statuses'),
+		}),
 		// Playwright context options for every capture; an invalid value fails the
 		// run here, before a browser is started
 		contextOverrides: resolveContextOptions(core.getInput('context-options')),
@@ -190,6 +206,7 @@ function logConfig(config) {
 		waitForSelectorOptions: config.waitForSelectorOptions,
 		contextOptions: config.contextOverrides,
 		statusBar: config.statusBar,
+		statusValidation: config.statusOptions,
 		comment: config.commentOptions,
 	});
 	core.endGroup(); // Action config
@@ -276,7 +293,10 @@ function buildStatusBar(config, contextOptions, label) {
 
 // Open the page and wait for the configured selector, if any
 async function openPage(page, config, label) {
-	await page.goto(config.url, {waitUntil: config.waitUntil});
+	const response = await page.goto(config.url, {waitUntil: config.waitUntil});
+	// Right after the navigation (the final response, after redirects), so a page that answered
+	// with an error is neither waited for nor captured
+	assertStatus(response, label, config.statusOptions);
 	// Wait for page element when config has element selector
 	const isTimedOut = await waitForConfiguredSelector(
 		page,
@@ -421,8 +441,10 @@ function verifyConfig(config) {
 }
 
 async function run() {
+	let commentOptions;
 	try {
 		const config = readConfig();
+		({commentOptions} = config);
 		logConfig(config);
 
 		const includedDevices = verifyConfig(config);
@@ -467,7 +489,10 @@ async function run() {
 		console.error(error);
 		core.setFailed(error.message);
 		// What the pages reported before the capture failed
-		reportPageProblems();
+		const problems = reportPageProblems();
+		if (error instanceof StatusValidationError) {
+			await postFailureComment(error, commentOptions, problems);
+		}
 
 		if (browser && browser.close) {
 			// Cleanup must never mask the original error or skip the exit code.
@@ -488,6 +513,39 @@ function buildFooter(pullRequest) {
 			? `${server}/${repository}/actions/runs/${runId}`
 			: undefined,
 	};
+}
+
+// A run that failed the HTTP status validation has no screenshots, so the comment says why
+// instead (and replaces the screenshots of an earlier push). It needs what the screenshot
+// comment needs, except that nothing is uploaded; a failure to post is only logged, the run
+// fails with the status error anyway.
+async function postFailureComment(error, commentOptions, problems) {
+	try {
+		const {GITHUB_REPOSITORY: repository, GITHUB_TOKEN: token} = process.env;
+		const releaseId = core.getInput('release-id') || '';
+		const {pull_request} = github.context.payload;
+		if (!pull_request || !repository || !token || !releaseId || !commentOptions?.comment) {
+			return;
+		}
+
+		const {owner, repo} = github.context.repo;
+		const result = await publishComment(github.getOctokit(token), {
+			owner,
+			repo,
+			issueNumber: pull_request.number,
+			render: previousBody => renderFailureComment(error, {
+				...commentOptions,
+				footer: commentOptions.footer ? buildFooter(pull_request) : null,
+				problems,
+				previousBody,
+			}),
+			marker: commentMarker(commentOptions.tag),
+			mode: commentOptions.mode,
+		});
+		console.log(`Comment ${result.action}:`, result.id ?? '');
+	} catch (postError) {
+		console.error(postError);
+	}
 }
 
 // Upload the images to the release; resolves to the ones that made it

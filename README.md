@@ -45,6 +45,7 @@ Telegram chat.
 - [Tall pages](#tall-pages) (`full-page`, `full-page-strategy`, `max-image-height`, `scroll-before-capture`)
 - [Custom sizes](#custom-sizes) (`sizes`: your own width, height and scale)
 - [Page problems](#page-problems) (`report-page-problems`: errors of the page as a warning)
+- [HTTP status validation](#http-status-validation) (`validate-status`, `positive-statuses`, `negative-statuses`: fail on a page that answers with an error)
 - [Context options](#context-options) (`context-options`: colour scheme, reduced motion, scale factor, viewport, ...)
 - [Phone status bar](#phone-status-bar) (`status-bar`: a mock iOS or Android status bar in mobile captures)
 - [PR comments](#pr-comments) (`release-id`, `comment-*`)
@@ -170,6 +171,9 @@ All inputs are optional except `url`. How switches are read differs a little:
 | Input | Default | Description |
 | --- | --- | --- |
 | `report-page-problems` | `false` | Set `true` to report what the page does wrong while it is captured: uncaught exceptions and console errors (listened to from before the navigation) and a `wait-for-selector` that timed out. They show up as a warning block in the PR comment and as warning annotations of the run. It never fails the run. See [Page problems](#page-problems). |
+| `validate-status` | `true` | Validate the HTTP status of every navigation (the final one, after redirects) before the screenshots are taken. A status that is not accepted fails the run, and the PR comment says why instead of showing screenshots. Set `false` to take the screenshots whatever the page answers. See [HTTP status validation](#http-status-validation). |
+| `positive-statuses` | `''` | Comma-separated HTTP status codes that count as successful, e.g. `200,201`. `200` when not set. |
+| `negative-statuses` | `''` | Comma-separated HTTP status codes that explicitly fail the run, e.g. `404,500`. A code that is not in `positive-statuses` fails as well. |
 | `release-id` | `''` | Id of an existing, published GitHub release that the screenshots are uploaded to as assets; the PR comment shows these files. A long-lived pre-release shared by all pull requests works well. Needs the `GITHUB_TOKEN` env. See [README.PR.md](README.PR.md) and [PR comments](#pr-comments). |
 | `comment` | `true` | Post the uploaded screenshots to the pull request. `false`, `0`, `no` and `off` (any case) switch it off: the screenshots are still uploaded to the release (needs `release-id`), nothing is posted. |
 | `comment-layout` | `details` | How the comment shows the screenshots: `details` (a collapsible section per group), `inline` (a heading per group, images shown directly) or `links` (only a list of links, no embedded images, the lightest). |
@@ -463,6 +467,48 @@ or throws goes into the PR comment verbatim: it is not masked like a secret in t
 run logs, and everybody who can see the pull request sees it. Do not enable
 `report-page-problems` for a page that prints secrets, tokens or personal data to
 its console.
+
+## HTTP status validation
+
+A page that answers with an error (a `404` page, a `500`) can still look like a page, and a screenshot of it is misleading. By default the action therefore checks the HTTP status of every navigation, right after `page.goto` and before it waits for `wait-for-selector` or takes a screenshot, and fails the run when the status is not accepted. It works like in [webapp-console-log-action](https://github.com/Primajin/webapp-console-log-action), with the same inputs, rules and messages.
+
+**Precedence rules:**
+
+1. If `validate-status` is `false` (exactly that value), all status codes are accepted and validation is skipped entirely.
+2. If the received status code is in `positive-statuses`, the capture continues normally.
+3. If the received status code is in `negative-statuses`, the run fails with a reason referencing the negative set.
+4. If the received status code is not in either set, the run fails with a reason referencing the positive set.
+
+`positive-statuses` defaults to `200`. Codes not listed in either set are failures, so with the defaults a `204` or a `304` fails too; list the codes you accept. Supported format: comma-separated integers (`200,201`). Codes outside the range 100 to 599 and values that are not integers are silently ignored.
+
+**What is checked:**
+
+- **The final status.** `page.goto` follows redirects, so a `301` to a page that answers `200` passes, and a redirect to a page that answers `404` fails with `404`.
+- **Every navigation.** The desktop sizes share one page and are checked once (as `Desktop`); every device and every custom size opens the page in a context of its own, so each is checked as well: a server can answer a phone differently (a redirect to a mobile site that is gone). The run stops at the first one that fails, and the captures before it are not uploaded.
+- **Only HTTP responses.** A navigation without a response (`about:blank`, a `data:` URL) has no status and is not validated; `file://` URLs report `200`.
+- **Independent of `wait-until`.** The status is the one of the main document, whichever `wait-until` ends the navigation; with `networkidle` the check happens once the page has settled. A navigation that fails without any response (DNS, refused connection, timeout) fails the run as before, with the error of Playwright.
+- **Fresh contexts, no cache.** Every context starts without an HTTP cache, so the page is not answered with a `304`.
+
+**When it fails**, the run fails with `HTTP status validation failed for <capture>: <reason>`, and no screenshots are uploaded or sent to Telegram. If the PR comment is on (a `release-id`, `comment` not switched off, a pull request), the comment of this call (the one of `comment-tag`, or only its section with `comment-section`) is posted or updated with a warning block, `No screenshots were taken: <capture>: <reason>`, instead of showing screenshots, so the images of an earlier push do not stay. With `report-page-problems: true`, what the page reported before the failure (for example the console error for the failed request) is listed in that block and annotated as usual.
+
+```yaml
+# Default: expect 200 after redirects, fail on anything else
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+
+# Accept both 200 and 404 (a page that is meant to be an error page)
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/may-not-exist
+    positive-statuses: '200,404'
+
+# Take the screenshots whatever the page answers
+- uses: Primajin/screenshots-ci-action@v4
+  with:
+    url: https://example.com/
+    validate-status: 'false'
+```
 
 ## Context options
 
